@@ -1,0 +1,25 @@
+name: cannon_mile
+description: "A minimal Flutter and Flame game foundation for Cannon Mile."
+publish_to: 'none'
+
+version: 0.1.0+1
+
+environment:
+  sdk: ^3.12.2
+
+dependencies:
+  display_mode: ^0.0.2
+  flame: ^1.37.0
+  flutter:
+    sdk: flutter
+
+dev_dependencies:
+  flutter_lints: ^6.0.0
+  flutter_test:
+    sdk: flutter
+
+flutter:
+  assets:
+    - assets/branding/orange_hat_boy_logo.webp
+    # BEGIN GENERATED GAME ASSETS
+    # END GENERATED GAME ASSETS
