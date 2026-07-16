@@ -12,6 +12,9 @@ gameplay or game-specific artwork yet.
 See [FUTURE_PLANS.md](FUTURE_PLANS.md) for the gameplay direction, development
 milestones, release gates, and originality requirements.
 
+See [ABOUT_GAME.md](ABOUT_GAME.md) for a short description of the intended
+game.
+
 ## Current Runtime
 
 The application starts in this order:
