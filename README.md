@@ -1,13 +1,15 @@
 # Cannon Mile
 
-Cannon Mile is a landscape Flutter and Flame game foundation. It currently
+Cannon Mile is a landscape Flutter and Flame game prototype. It currently
 launches through the complete production-style startup path and then displays
-an empty game surface with a centered **Coming Soon** placeholder.
+a layered player tank that follows the Windows mouse horizontally and aims its
+cannon at the pointer. Cursor distance controls a heavy but responsive movement
+speed, while high-quality filtered sprites keep the layered artwork smooth.
 
-The repository is intentionally a clean template: it contains the runtime
-architecture, loading system, responsive stage, platform setup, lifecycle
-handling, reusable button behavior, tests, and development tools, but no
-gameplay or game-specific artwork yet.
+The repository contains the runtime architecture, loading system, responsive
+stage, platform setup, lifecycle handling, reusable button behavior, tests,
+development tools, and the first movement and animation prototype. Combat and
+the complete game loop are not implemented yet.
 
 See [FUTURE_PLANS.md](FUTURE_PLANS.md) for the gameplay direction, development
 milestones, release gates, and originality requirements.
@@ -32,15 +34,14 @@ Android or Windows native launcher
         |
         + VirtualStage
             + GameWidget<CannonMileGame>
-            |   -> CannonMileWorld
-            |
-            + ComingSoonOverlay
+                -> CannonMileWorld
+                    -> TankComponent
 ```
 
 `GameShell` mounts the Flame game immediately. The animated loading overlay is
-drawn above it while the required boot tasks complete. After the loading
-overlay fades away, the already-initialized game canvas and Flutter
-**Coming Soon** overlay are revealed.
+drawn above it while the required boot tasks complete. Game initialization now
+includes the tank skin and layered components. After the loading overlay fades
+away, the mouse-controlled Flame prototype is revealed.
 
 ## Architecture at a Glance
 
@@ -131,8 +132,11 @@ provides a typed world throughout the game instead of relying on Flame's base
 
 - Creates the one `CannonMileWorld` instance.
 - Draws the solid application background.
+- Converts Windows mouse-hover coordinates into world coordinates.
+- Uses a top-left camera coordinate system matching the virtual stage.
 - Exposes an `initialized` future.
-- Completes that future after Flame's `onLoad` succeeds.
+- Completes that future after the game, world, tank sprites, and tank layers
+  finish loading.
 - Reports initialization errors to the boot system.
 
 The game class should remain the high-level coordinator. Individual enemies,
@@ -141,14 +145,19 @@ inside it.
 
 ### `CannonMileWorld`
 
-`lib/game/cannon_mile_world.dart` is the root of the future gameplay scene.
-It is deliberately empty today.
+`lib/game/cannon_mile_world.dart` is the root of the gameplay scene. It owns one
+`TankComponent`, places it near the bottom of the responsive stage, forwards
+the current pointer target, and keeps the tank inside the visible width.
 
-Future world objects should be added below this world:
+Current and future world objects belong below this world:
 
 ```text
 CannonMileWorld
-    + player vehicle
+    + TankComponent
+        + eased wheel1-to-wheel2 track morph
+        + three speed-responsive bouncing round wheels
+        + independently aimed cannon
+        + anchored shaking base
     + enemies
     + projectiles
     + terrain
@@ -159,9 +168,9 @@ CannonMileWorld
 The world is the correct owner for objects that participate in the simulation,
 camera space, collision, or gameplay update loop.
 
-### Planned Game Folders
+### Game Folders
 
-The empty folders establish boundaries for future work:
+The folders establish boundaries for current and future work:
 
 ```text
 lib/game/
@@ -192,7 +201,6 @@ the authoritative state should remain in the game layer.
 - The single `CannonMileGame` instance.
 - The Flame `GameWidget`.
 - The responsive `VirtualStage`.
-- The Flutter `ComingSoonOverlay`.
 - The startup `BootOverlay`.
 - Application lifecycle observation.
 
@@ -228,8 +236,9 @@ these metrics instead of assuming a particular physical resolution.
 
 ### Overlays and Pages
 
-`lib/ui/overlays/coming_soon_overlay.dart` is the only visible interface after
-loading. It is a centered semantic Flutter label and does not intercept input.
+No Flutter overlay is currently displayed after loading. The visible prototype
+is rendered entirely by Flame so mouse coordinates and tank movement share the
+same virtual-stage coordinate system.
 
 Future UI belongs in:
 
@@ -291,15 +300,22 @@ feature that owns them.
 
 ## Assets
 
-The only active application asset is:
+The active assets are:
 
 ```text
 assets/branding/orange_hat_boy_logo.webp
+assets/tank skins/default-skin/
+|-- base-tank.webp
+|-- tank-canon.webp
+|-- wheel-rounded.webp
+|-- wheel1.webp
+`-- wheel2.webp
 ```
 
-It is used by the Flutter loading overlay and as the source for native launcher
-icons. The Android native splash is a solid dark screen so startup blends into
-the Flutter loading sequence without showing separate artwork.
+The branding image is used by the Flutter loading overlay and as the source for
+native launcher icons. The tank files form the first game-specific skin. The
+Android native splash remains a solid dark screen so startup blends into the
+Flutter loading sequence.
 
 Reserved asset categories are:
 
@@ -329,8 +345,8 @@ powershell -ExecutionPolicy Bypass -File tool\sync_asset_folders.ps1
 ```
 
 The script updates only the generated asset block in `pubspec.yaml`. It ignores
-`.gitkeep` and declares a category only when that directory contains supported
-runtime assets.
+`.gitkeep` and declares each directory containing supported runtime assets,
+including nested skin directories.
 
 To verify the manifest without modifying it:
 
@@ -438,22 +454,24 @@ The test suite mirrors the architecture:
 | --- | --- |
 | `test/asset_manifest_test.dart` | Prevents unapproved assets from entering the Flutter bundle |
 | `test/boot_controller_test.dart` | Progress, ordering, deduplication, timeouts, failures, and completion |
-| `test/game_shell_test.dart` | Loading transition, placeholder, lifecycle handling, and typed empty world |
+| `test/game_shell_test.dart` | Loading transition, lifecycle handling, and the typed world/tank relationship |
 | `test/raised_pressable_test.dart` | Press movement, callback delay, disable, cancellation, and disposal |
+| `test/tank_component_test.dart` | Filtered layer composition, eased track morphing, speed-responsive wheel motion, frame-rate stability, bounds, and overshoot |
+| `test/tank_motion_test.dart` | Distance-based velocity, acceleration, braking, reversal, wheel response, and 180-degree cannon aiming |
 | `test/virtual_stage_test.dart` | 16:9, common landscape, ultrawide, taller, and safe-area layouts |
 
 When a new subsystem is introduced, its tests should be added beside the layer
 that owns it. Gameplay rules should be testable without depending on visual
 Flutter widgets.
 
-## Adding the First Gameplay Feature
+## Adding the Next Gameplay Feature
 
-A clean first vertical slice should follow this order:
+A clean combat slice should follow this order:
 
-1. Add a player component under `lib/game/components/`.
-2. Add it to `CannonMileWorld`.
-3. Add input as a dedicated component or system.
-4. Add combat or spawning logic under `lib/game/systems/`.
+1. Keep the existing tank movement and aiming behavior as the player base.
+2. Define firing, health, failure, and encounter rules.
+3. Add projectiles and combat logic under `lib/game/systems/`.
+4. Add the first enemy component and spawning behavior.
 5. Add a Flutter HUD under `lib/ui/overlays/`.
 6. Expose only the minimum game state needed by the HUD.
 7. Add assets to the matching asset category and synchronize the manifest.
@@ -466,9 +484,9 @@ startup path independent from gameplay content.
 
 The repository does not currently contain:
 
-- Vehicles, enemies, projectiles, terrain, or collision.
+- Firing, enemies, projectiles, terrain, damage, or collision.
 - Menus, settings, credits, privacy, shops, or game-over screens.
-- Audio, music, fonts, backgrounds, or gameplay artwork.
+- Audio, music, fonts, or backgrounds beyond the tank skin.
 - Saves, economy, progression, notifications, or online services.
 
 Those systems should be introduced as Cannon Mile's design becomes concrete,

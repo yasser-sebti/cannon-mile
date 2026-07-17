@@ -8,7 +8,6 @@ import '../../app/platform_bootstrap.dart';
 import '../../boot/boot_controller.dart';
 import '../../boot/boot_overlay.dart';
 import '../../game/cannon_mile_game.dart';
-import '../overlays/coming_soon_overlay.dart';
 import 'virtual_stage.dart';
 
 class GameShell extends StatefulWidget {
@@ -81,7 +80,6 @@ class _GameShellState extends State<GameShell> with WidgetsBindingObserver {
                       return const ColoredBox(color: AppConfig.backgroundColor);
                     },
                   ),
-                  const ComingSoonOverlay(),
                 ],
               ),
             ),

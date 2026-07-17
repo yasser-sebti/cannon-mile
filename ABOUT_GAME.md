@@ -21,7 +21,9 @@ responsive combat encounters will build into longer runs featuring stronger
 enemy combinations, temporary upgrades, weapon choices, major threats, and
 increasing pressure.
 
-Cannon Mile is currently in its foundation stage. The loading system,
-responsive Flutter interface, and empty Flame game world are ready, while the
-actual gameplay and original game assets will be implemented in future
-milestones.
+Cannon Mile is currently in its first movement and animation prototype stage.
+The Windows build contains a layered tank that follows the mouse horizontally,
+accelerates according to cursor distance, and aims its cannon through the upper
+180-degree arc. Its filtered artwork uses a smooth two-image track morph plus
+speed-responsive wheel and chassis motion. Firing, enemies, encounters,
+progression, audio, and the complete game loop remain future milestones.

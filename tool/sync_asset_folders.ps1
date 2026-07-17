@@ -21,11 +21,15 @@ if (-not (Test-Path -LiteralPath $assetRoot)) {
   throw "Asset folder not found at $assetRoot"
 }
 
-$assetDirectories = Get-ChildItem -LiteralPath $assetRoot -Directory |
-  Where-Object { $_.Name -ne 'branding' } |
+$assetDirectories = Get-ChildItem -LiteralPath $assetRoot -Directory -Recurse |
+  Where-Object {
+    $relativePath = $_.FullName.Substring($assetRoot.Length + 1)
+    $topLevelDirectory = $relativePath.Split([System.IO.Path]::DirectorySeparatorChar)[0]
+    $topLevelDirectory -ne 'branding'
+  } |
   Where-Object {
     $directory = $_
-    $contentFiles = Get-ChildItem -LiteralPath $directory.FullName -File -Recurse |
+    $contentFiles = Get-ChildItem -LiteralPath $directory.FullName -File |
       Where-Object {
         $_.Name -ne '.gitkeep' -and
         $supportedExtensions -contains $_.Extension.ToLowerInvariant()
@@ -38,7 +42,8 @@ $content = [System.IO.File]::ReadAllText($pubspecPath)
 $newline = if ($content.Contains("`r`n")) { "`r`n" } else { "`n" }
 $generatedLines = @($beginMarker)
 foreach ($directory in $assetDirectories) {
-  $generatedLines += "    - assets/$($directory.Name)/"
+  $relativePath = $directory.FullName.Substring($repoRoot.Length + 1).Replace('\', '/')
+  $generatedLines += "    - $relativePath/"
 }
 $generatedLines += $endMarker
 $generatedBlock = $generatedLines -join $newline

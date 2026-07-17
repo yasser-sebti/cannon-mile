@@ -5,7 +5,8 @@ what should be built next, the intended order of work, and the conditions that
 must be met before moving to the next milestone.
 
 The roadmap begins from the current repository state: a tested Flutter and
-Flame foundation that launches into an empty `CannonMileWorld`.
+Flame foundation with a Windows mouse-controlled tank movement and animation
+prototype inside `CannonMileWorld`.
 
 For the current code structure, see [README.md](README.md).
 
@@ -47,7 +48,7 @@ open decisions until the greybox prototype proves what is enjoyable.
 
 | Milestone | Status | Outcome |
 | --- | --- | --- |
-| 0. Runtime foundation | Complete | Reliable branded launch into an empty responsive Flame world |
+| 0. Runtime foundation | Complete | Reliable branded launch into a responsive Flame world |
 | 1. Design lock and technical contracts | Next | A small, testable definition of the first playable game loop |
 | 2. Greybox vertical slice | Planned | One complete playable encounter using temporary shapes |
 | 3. Core combat systems | Planned | Reusable player, weapon, enemy, collision, spawning, and scoring systems |
@@ -77,6 +78,9 @@ The current project provides:
 - Asset-folder synchronization tooling.
 - Desktop resolution preview launchers.
 - Unit and widget tests for the foundation.
+- A first layered tank skin, horizontal mouse following, upper-arc cannon aim,
+  high-quality filtered rendering, heavy responsive acceleration, an eased
+  two-image track morph, and speed-responsive wheel and chassis animation.
 
 This milestone should remain stable while gameplay is developed. New features
 must not make optional gameplay content a requirement for reaching the first
@@ -93,13 +97,12 @@ answers only the questions needed for the first playable slice.
 
 - Define the player's primary objective.
 - Decide whether the route scrolls automatically or responds to player speed.
-- Decide whether the cannon moves freely, changes lanes, or follows a constrained
-  path.
+- The current prototype locks the vehicle to horizontal ground movement.
 - Select the first input model:
   - twin-stick touch controls;
   - drag-to-move and drag-to-aim;
   - movement control with automatic targeting;
-  - keyboard and mouse equivalents for Windows.
+  - Windows currently uses direct mouse hover for movement and aiming.
 - Define firing behavior, reload behavior, and projectile lifetime.
 - Define player health, failure, and restart rules.
 - Define the first enemy's movement and attack behavior.
@@ -161,7 +164,7 @@ should remain separated even if the first implementation is small.
 
 ### Required Slice
 
-- Spawn one controllable player cannon.
+- Retain the existing controllable, animated player tank.
 - Support touch input and a Windows development input.
 - Aim and fire one weapon.
 - Spawn one original enemy behavior.
@@ -487,11 +490,11 @@ These rules preserve the current project boundaries:
 The recommended next development session is Milestone 1:
 
 1. Create a one-page gameplay specification.
-2. Choose and document the first touch-control model.
-3. Define the first 60-to-90-second encounter.
-4. Define game state and Flutter-to-Flame state exposure.
-5. Define the player, projectile, and first enemy data.
-6. Implement the slice with shapes before commissioning or generating assets.
+2. Playtest and tune the implemented horizontal mouse-following movement.
+3. Choose and document the first touch-control model.
+4. Define the first 60-to-90-second encounter and firing behavior.
+5. Define game state and Flutter-to-Flame state exposure.
+6. Define projectile and first-enemy data, then implement them with shapes.
 
 The first implementation goal is not a large content build. It is one short,
 complete, readable encounter that proves Cannon Mile's controls and combat are

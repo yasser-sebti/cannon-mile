@@ -1,4 +1,3 @@
-import 'package:cannon_mile/ui/overlays/coming_soon_overlay.dart';
 import 'package:cannon_mile/ui/stage/virtual_stage.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -31,7 +30,7 @@ void main() {
     expect(metrics.safePadding.top, closeTo(15, 0.0001));
   });
 
-  testWidgets('Coming Soon stage does not overflow common landscape sizes', (
+  testWidgets('virtual stage does not overflow common landscape sizes', (
     tester,
   ) async {
     for (final size in [
@@ -44,18 +43,20 @@ void main() {
       await tester.binding.setSurfaceSize(size);
       await tester.pumpWidget(
         const MaterialApp(
-          home: Scaffold(body: VirtualStage(child: ComingSoonOverlay())),
+          home: Scaffold(
+            body: VirtualStage(child: SizedBox.expand(key: Key('stage_probe'))),
+          ),
         ),
       );
 
-      expect(find.text('Coming Soon'), findsOneWidget);
+      expect(find.byKey(const Key('stage_probe')), findsOneWidget);
       expect(tester.takeException(), isNull);
     }
 
     await tester.binding.setSurfaceSize(null);
   });
 
-  testWidgets('Coming Soon stage accepts landscape safe-area padding', (
+  testWidgets('virtual stage accepts landscape safe-area padding', (
     tester,
   ) async {
     await tester.binding.setSurfaceSize(const Size(1280, 720));
@@ -66,15 +67,17 @@ void main() {
             size: Size(1280, 720),
             viewPadding: EdgeInsets.fromLTRB(48, 18, 48, 18),
           ),
-          child: Scaffold(body: VirtualStage(child: ComingSoonOverlay())),
+          child: Scaffold(
+            body: VirtualStage(child: SizedBox.expand(key: Key('stage_probe'))),
+          ),
         ),
       ),
     );
 
-    final context = tester.element(find.byType(ComingSoonOverlay));
+    final context = tester.element(find.byKey(const Key('stage_probe')));
     final metrics = StageMetrics.of(context);
     expect(metrics.safePadding.left, greaterThan(0));
-    expect(find.text('Coming Soon'), findsOneWidget);
+    expect(find.byKey(const Key('stage_probe')), findsOneWidget);
     expect(tester.takeException(), isNull);
 
     await tester.binding.setSurfaceSize(null);

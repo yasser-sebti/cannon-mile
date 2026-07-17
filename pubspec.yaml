@@ -22,4 +22,5 @@ flutter:
   assets:
     - assets/branding/orange_hat_boy_logo.webp
     # BEGIN GENERATED GAME ASSETS
+    - assets/tank skins/default-skin/
     # END GENERATED GAME ASSETS
