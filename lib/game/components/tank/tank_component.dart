@@ -10,13 +10,18 @@ import 'tank_bullet_level.dart';
 import 'tank_bullet_shell_component.dart';
 import 'tank_bullet_spread_level.dart';
 import 'tank_fire_rate_level.dart';
+import 'tank_laser_component.dart';
+import 'tank_laser_particle_component.dart';
 import 'tank_movement_mode.dart';
 import 'tank_motion.dart';
 import 'tank_muzzle_flash_component.dart';
+import 'tank_muzzle_particle_component.dart';
+import 'tank_muzzle_smoke_component.dart';
 import 'tank_pointer_swipe_tracker.dart';
 import 'tank_skin.dart';
 import 'tank_speed_level.dart';
 import 'tank_track_morph_component.dart';
+import 'tank_weapon_mode.dart';
 
 class TankComponent extends PositionComponent
     with HasGameReference<CannonMileGame> {
@@ -28,14 +33,20 @@ class TankComponent extends PositionComponent
     TankBulletSpreadLevel initialBulletSpreadLevel =
         TankBulletSpreadLevel.level1,
     TankSpeedLevel initialSpeedLevel = TankSpeedLevel.level6,
+    TankWeaponMode initialWeaponMode = TankWeaponMode.bullets,
     math.Random? muzzleFlashRandom,
+    math.Random? muzzleParticleRandom,
+    math.Random? laserParticleRandom,
     math.Random? shellRandom,
   }) : _movementMode = initialMovementMode,
        _fireRateLevel = initialFireRateLevel,
        _bulletLevel = initialBulletLevel,
        _bulletSpreadLevel = initialBulletSpreadLevel,
        _speedLevel = initialSpeedLevel,
+       _weaponMode = initialWeaponMode,
        _muzzleFlashRandom = muzzleFlashRandom ?? math.Random(),
+       _muzzleParticleRandom = muzzleParticleRandom ?? math.Random(),
+       _laserParticleRandom = laserParticleRandom ?? math.Random(),
        _shellRandom = shellRandom ?? math.Random(),
        super(
          size: Vector2(tankWidth, tankHeight),
@@ -53,6 +64,7 @@ class TankComponent extends PositionComponent
   static const double cannonPivotY = 112;
   static const double cannonArcHorizontalRadius = 18;
   static const double cannonArcVerticalDrop = 10;
+  static const double muzzleSmokeVerticalOffset = 2;
   static final Vector2 _shellEjectionPort = Vector2(44, 76);
 
   static final Vector2 _trackSize = Vector2(264, 79);
@@ -79,13 +91,21 @@ class TankComponent extends PositionComponent
   TankBulletLevel _bulletLevel;
   TankBulletSpreadLevel _bulletSpreadLevel;
   TankSpeedLevel _speedLevel;
+  TankWeaponMode _weaponMode;
   final math.Random _muzzleFlashRandom;
+  final math.Random _muzzleParticleRandom;
+  final math.Random _laserParticleRandom;
   final math.Random _shellRandom;
 
   late final TankTrackMorphComponent _track;
   late final List<SpriteComponent> _roundWheels;
   late final SpriteComponent _cannon;
   late final TankMuzzleFlashComponent _muzzleFlash;
+  late final TankMuzzleSmokeComponent _muzzleSmoke;
+  late final TankMuzzleParticlePalette _muzzleParticlePalette;
+  TankLaserComponent? _laser;
+  final List<TankLaserParticleComponent> _laserParticlePool = [];
+  final List<TankMuzzleParticleComponent> _muzzleParticlePool = [];
   late final List<Sprite> _bulletSprites;
   final List<TankBulletComponent> _bulletPool = [];
   late final List<Sprite> _bulletShellSprites;
@@ -105,22 +125,39 @@ class TankComponent extends PositionComponent
   double _baseShakePhase = 0;
   double _wheelBouncePhase = 0;
   bool _triggerHeld = false;
+  bool _muzzleSmokePending = false;
+  bool _muzzleSmokeArmed = false;
+  double _muzzleHeatRemaining = 0;
+  double _continuousFireElapsed = 0;
   bool _rendererWarmupActive = false;
   final List<TankBulletComponent> _warmupBullets = [];
   final List<TankBulletShellComponent> _warmupShells = [];
+  final List<TankMuzzleParticleComponent> _warmupMuzzleParticles = [];
+  final List<TankLaserParticleComponent> _warmupLaserParticles = [];
+  double _laserStreamParticleAccumulator = 0;
   double _timeUntilNextShot = 0;
   double _bulletDropSoundCooldown = 0;
   int _shotsFired = 0;
   int _projectilesFired = 0;
   int _shellsEjected = 0;
+  int _muzzleParticlesEmitted = 0;
+  int _lastMuzzleParticleCount = 0;
   TankBulletComponent? _lastBullet;
   TankBulletShellComponent? _lastShell;
   final List<TankBulletComponent?> _lastShotBulletSlots = List.filled(5, null);
   int _lastShotBulletCount = 0;
   final Vector2 _transformScratch = Vector2.zero();
   final Vector2 _shotOrigin = Vector2.zero();
+  final Vector2 _muzzleParticleCannonPoint = Vector2.zero();
+  final Vector2 _muzzleParticleOrigin = Vector2.zero();
+  final Vector2 _muzzleSmokeWorldPosition = Vector2.zero();
+  final Vector2 _laserOrigin = Vector2.zero();
   final Vector2 _shellOrigin = Vector2.zero();
   final Vector2 _shellVelocity = Vector2.zero();
+  bool _hasMuzzleSmokeWorldPosition = false;
+  double _previousMuzzleSmokeWorldX = 0;
+  double _laserAngularVelocity = 0;
+  double _laserTargetAngle = 0;
 
   double get horizontalVelocity => _horizontalVelocity;
   TankMovementMode get movementMode => _movementMode;
@@ -128,6 +165,7 @@ class TankComponent extends PositionComponent
   TankBulletLevel get bulletLevel => _bulletLevel;
   TankBulletSpreadLevel get bulletSpreadLevel => _bulletSpreadLevel;
   TankSpeedLevel get speedLevel => _speedLevel;
+  TankWeaponMode get weaponMode => _weaponMode;
   bool get triggerHeld => _triggerHeld;
   int get shotsFired => _shotsFired;
   int get projectilesFired => _projectilesFired;
@@ -144,6 +182,27 @@ class TankComponent extends PositionComponent
       _bulletShellPool.where((shell) => !shell.isActive).length;
   int get shellsEjected => _shellsEjected;
   TankBulletShellComponent? get lastShell => _lastShell;
+  int get muzzleParticlePoolCapacity => _muzzleParticlePool.length;
+  int get availableMuzzleParticleCount =>
+      _muzzleParticlePool.where((particle) => !particle.isActive).length;
+  int get muzzleParticlesEmitted => _muzzleParticlesEmitted;
+  int get lastMuzzleParticleCount => _lastMuzzleParticleCount;
+  List<Color> get muzzleParticleColors => _muzzleParticlePalette.colors;
+  Rect get muzzleParticleSpawnBounds =>
+      _muzzleParticlePalette.firstFrameVisibleBounds(
+        horizontalFlip: _muzzleFlash.isHorizontallyFlipped,
+      );
+  Iterable<TankMuzzleParticleComponent> get activeMuzzleParticles =>
+      _muzzleParticlePool.where(
+        (particle) => particle.isActive && !particle.isWarmup,
+      );
+  int get laserParticlePoolCapacity => _laserParticlePool.length;
+  int get availableLaserParticleCount =>
+      _laserParticlePool.where((particle) => !particle.isActive).length;
+  Iterable<TankLaserParticleComponent> get activeLaserParticles =>
+      _laserParticlePool.where(
+        (particle) => particle.isActive && !particle.isWarmup,
+      );
   double get bulletDropSoundCooldown => _bulletDropSoundCooldown;
   Iterable<TankBulletShellComponent> get activeShells =>
       _bulletShellPool.where((shell) => shell.isActive && !shell.isWarmup);
@@ -154,6 +213,9 @@ class TankComponent extends PositionComponent
   bool get isMoving =>
       _movementMode == TankMovementMode.continuous || isScreenMoving;
   double get cannonAngle => _cannon.angle;
+  double get laserTargetAngle => _laserTargetAngle;
+  double get laserAngularVelocity => _laserAngularVelocity;
+  TankLaserComponent? get laser => _laser;
   double get trackMorphProgress => _track.blend;
   double get smoothedAnimationSpeed => _smoothedAnimationSpeed;
   double get pointerSwipeVelocity => _pointerSwipeTracker.sampledVelocity;
@@ -165,6 +227,12 @@ class TankComponent extends PositionComponent
   double get muzzleFlashBlend => _muzzleFlash.blend;
   bool get isMuzzleFlashHorizontallyFlipped =>
       _muzzleFlash.isHorizontallyFlipped;
+  bool get isMuzzleSmokeVisible => _muzzleSmoke.isVisible;
+  bool get isMuzzleSmokePending => _muzzleSmokePending;
+  bool get isMuzzleSmokeArmed => _muzzleSmokeArmed;
+  bool get isMuzzleHot => _muzzleHeatRemaining > 0;
+  double get muzzleHeatRemaining => _muzzleHeatRemaining;
+  double get continuousFireElapsed => _continuousFireElapsed;
 
   @visibleForTesting
   static Vector2 get shellEjectionPort => _shellEjectionPort.clone();
@@ -189,6 +257,12 @@ class TankComponent extends PositionComponent
 
   @visibleForTesting
   TankMuzzleFlashComponent get muzzleFlashPart => _muzzleFlash;
+
+  @visibleForTesting
+  TankMuzzleSmokeComponent get muzzleSmokePart => _muzzleSmoke;
+
+  @visibleForTesting
+  TankLaserComponent get laserPart => _laser!;
 
   @visibleForTesting
   TankTrackMorphComponent get trackPart => _track;
@@ -254,6 +328,10 @@ class TankComponent extends PositionComponent
     final muzzleFrameCache = await TankMuzzleFlashComponent.bakeFrames(
       muzzleSprites,
     );
+    _muzzleParticlePalette = await TankMuzzleParticlePalette.fromSprites(
+      muzzleSprites,
+      renderScale: TankMuzzleFlashComponent.renderScale,
+    );
     game.completeLoadingUnits(1, 'Baking muzzle effects');
     _muzzleFlash = TankMuzzleFlashComponent(
       sprites: muzzleSprites,
@@ -261,6 +339,10 @@ class TankComponent extends PositionComponent
       position: Vector2(_cannonSize.x / 2, 0),
       anchor: Anchor.bottomCenter,
       random: _muzzleFlashRandom,
+      priority: 1,
+    );
+    _muzzleSmoke = TankMuzzleSmokeComponent(
+      position: Vector2(_cannonSize.x / 2, 0),
       priority: 1,
     );
     final sourceBulletSprites = [
@@ -292,11 +374,13 @@ class TankComponent extends PositionComponent
 
     await addAll([
       _track,
+      _muzzleSmoke,
       _cannon,
       ..._roundWheels,
       _base,
       _bulletShellRenderLayer,
     ]);
+    _updateMuzzleSmokeAttachment();
   }
 
   Future<void> initializeProjectilePool() async {
@@ -314,6 +398,20 @@ class TankComponent extends PositionComponent
       ),
     );
     await game.world.addAll(_bulletPool);
+  }
+
+  Future<void> initializeMuzzleParticlePool() async {
+    if (_muzzleParticlePool.isNotEmpty) {
+      return;
+    }
+    _muzzleParticlePool.addAll(
+      List.generate(
+        TankMuzzleParticleComponent.poolCapacity,
+        (_) => TankMuzzleParticleComponent(palette: _muzzleParticlePalette),
+        growable: false,
+      ),
+    );
+    await game.world.addAll(_muzzleParticlePool);
   }
 
   Future<void> initializeBulletShellPool() async {
@@ -338,10 +436,42 @@ class TankComponent extends PositionComponent
     await game.world.addAll(_bulletShellPool);
   }
 
+  Future<void> initializeUltimateLaser() async {
+    if (_laser != null) {
+      return;
+    }
+    final visualCache = await TankLaserVisualCache.bake();
+    final laser = TankLaserComponent(visualCache: visualCache)
+      ..setWeaponEnabled(_weaponMode == TankWeaponMode.laser);
+    _laser = laser;
+    await game.world.add(laser);
+    _updateLaserGeometry();
+  }
+
+  Future<void> initializeLaserParticlePool() async {
+    if (_laserParticlePool.isNotEmpty) {
+      return;
+    }
+    final sprites = [
+      for (final asset in TankLaserParticleComponent.assetPaths)
+        Sprite(game.images.fromCache(asset)),
+    ];
+    _laserParticlePool.addAll(
+      List.generate(
+        TankLaserParticleComponent.poolCapacity,
+        (_) => TankLaserParticleComponent(sprites: sprites),
+        growable: false,
+      ),
+    );
+    await _laser!.addAll(_laserParticlePool);
+  }
+
   void beginRendererWarmup(Vector2 center, {required bool horizontalFlip}) {
     _rendererWarmupActive = true;
     _warmupBullets.clear();
     _warmupShells.clear();
+    _warmupMuzzleParticles.clear();
+    _warmupLaserParticles.clear();
     for (var index = 0; index < TankBulletLevel.values.length; index++) {
       final bullet = _bulletPool[index];
       bullet.activate(
@@ -367,15 +497,46 @@ class TankComponent extends PositionComponent
       );
       _warmupShells.add(shell);
     }
+    for (var index = 0; index < _muzzleParticlePalette.colors.length; index++) {
+      final particle = _muzzleParticlePool[index]
+        ..activateForWarmup(
+          colorIndex: index,
+          x: center.x - 30 + index * 20,
+          y: center.y - 40,
+        );
+      _warmupMuzzleParticles.add(particle);
+    }
     _track.phase = 0.5;
     _muzzleFlash.trigger(horizontalFlip: horizontalFlip);
+    _muzzleSmoke.activateForWarmup();
+    _laser?.beginWarmup(origin: center, stageSize: game.size);
+    for (var index = 0; index < TankLaserParticleKind.values.length; index++) {
+      final particle = _laserParticlePool[index]
+        ..activateForWarmup(
+          kind: TankLaserParticleKind.values[index],
+          lateralOffset: -36 + index * 72,
+          distanceFromMuzzle: 110,
+        );
+      _warmupLaserParticles.add(particle);
+    }
   }
 
   void continueRendererWarmup({required bool horizontalFlip}) {
     _track.phase = 0.5;
     _muzzleFlash.trigger(horizontalFlip: horizontalFlip);
+    _muzzleSmoke.setMotion(
+      horizontalVelocity: _horizontalVelocity,
+      cannonAngle: _cannon.angle,
+      cannonAngularVelocity: 2.5,
+      dt: 1 / 60,
+      continuousMode: _movementMode == TankMovementMode.continuous,
+    );
+    _laser?.continueWarmup();
     for (final shell in _warmupShells) {
       shell.angle = -shell.angle;
+    }
+    for (final particle in _warmupMuzzleParticles) {
+      particle.angle += math.pi / 2;
     }
   }
 
@@ -389,8 +550,21 @@ class TankComponent extends PositionComponent
       shell.deactivate();
     }
     _warmupShells.clear();
+    for (final particle in _warmupMuzzleParticles) {
+      particle.deactivate();
+    }
+    _warmupMuzzleParticles.clear();
+    for (final particle in _warmupLaserParticles) {
+      particle.deactivate();
+    }
+    _warmupLaserParticles.clear();
     _track.phase = _trackCyclePosition;
     _muzzleFlash.finish();
+    _muzzleSmoke.cancel();
+    _laser?.endWarmup();
+    _muzzleSmokePending = false;
+    _muzzleSmokeArmed = false;
+    _muzzleHeatRemaining = 0;
   }
 
   void setPointerTarget(
@@ -418,6 +592,26 @@ class TankComponent extends PositionComponent
     }
   }
 
+  void setWeaponMode(TankWeaponMode mode) {
+    if (_weaponMode == mode) {
+      return;
+    }
+    _weaponMode = mode;
+    _triggerHeld = false;
+    _timeUntilNextShot = 0;
+    _continuousFireElapsed = 0;
+    _muzzleFlash.finish();
+    _muzzleSmoke.cancel();
+    _muzzleSmokePending = false;
+    _muzzleSmokeArmed = false;
+    _laserAngularVelocity = 0;
+    _laser?.setWeaponEnabled(mode == TankWeaponMode.laser);
+    _laser?.setTriggerHeld(false);
+    game.fireSounds.stopLaser();
+    _laserStreamParticleAccumulator = 0;
+    _deactivateLaserParticles();
+  }
+
   void setFireRateLevel(TankFireRateLevel level) {
     _fireRateLevel = level;
     _timeUntilNextShot = math.min(_timeUntilNextShot, 1 / level.shotsPerSecond);
@@ -440,8 +634,31 @@ class TankComponent extends PositionComponent
       return;
     }
     _triggerHeld = held;
+    if (_weaponMode == TankWeaponMode.laser) {
+      _laser?.setTriggerHeld(held);
+      _timeUntilNextShot = 0;
+      _continuousFireElapsed = 0;
+      _muzzleFlash.finish();
+      _muzzleSmoke.cancel();
+      _muzzleSmokePending = false;
+      _muzzleSmokeArmed = false;
+      if (held) {
+        game.fireSounds.startLaser();
+      } else {
+        game.fireSounds.stopLaser();
+      }
+      return;
+    }
     if (held) {
       _timeUntilNextShot = 0;
+      _continuousFireElapsed = 0;
+      _muzzleSmoke.cancel();
+      _muzzleSmokePending = false;
+      _muzzleSmokeArmed = false;
+    } else {
+      _muzzleSmokePending = _muzzleSmokeArmed;
+      _muzzleSmokeArmed = false;
+      _continuousFireElapsed = 0;
     }
   }
 
@@ -468,10 +685,104 @@ class TankComponent extends PositionComponent
     }
     _pointerSwipeTracker.advance(dt);
     _updateMovement(dt);
-    _updateAim();
+    final previousCannonAngle = _cannon.angle;
+    _updateAim(dt);
+    _updateLaserGeometry();
+    _laser?.advance(dt);
+    final muzzleSmokeAnchorDelta = _updateMuzzleSmokeAttachment();
+    final cannonAngularVelocity = dt > 0
+        ? (_cannon.angle - previousCannonAngle) / dt
+        : 0.0;
+    _updateLaserParticles(dt);
+    _muzzleSmoke.setMotion(
+      horizontalVelocity: _horizontalVelocity,
+      cannonAngle: _cannon.angle,
+      cannonAngularVelocity: cannonAngularVelocity,
+      dt: dt,
+      anchorHorizontalDelta: muzzleSmokeAnchorDelta,
+      continuousMode: _movementMode == TankMovementMode.continuous,
+    );
     _updateShooting(dt);
+    _updateMuzzleSmokeLifecycle(dt);
     _updateAnimations(dt);
     super.update(dt);
+  }
+
+  void _updateLaserParticles(double dt) {
+    final laser = _laser;
+    if (laser == null || _rendererWarmupActive || dt <= 0) {
+      return;
+    }
+    if (!laser.isVisible) {
+      _deactivateLaserParticles();
+      return;
+    }
+    if (!_triggerHeld ||
+        _weaponMode != TankWeaponMode.laser ||
+        laser.power <= 0.025) {
+      return;
+    }
+
+    final streamRate = 68 + laser.power * 58;
+    _laserStreamParticleAccumulator += dt * streamRate;
+    var emitted = 0;
+    while (_laserStreamParticleAccumulator >= 1 && emitted < 12) {
+      _laserStreamParticleAccumulator -= 1;
+      _emitLaserStreamParticle(laser);
+      emitted++;
+    }
+  }
+
+  void _emitLaserStreamParticle(TankLaserComponent laser) {
+    final kind = _laserParticleRandom.nextDouble() < 0.46
+        ? TankLaserParticleKind.colorDodge
+        : TankLaserParticleKind.graphic;
+    final side = _laserParticleRandom.nextBool() ? -1.0 : 1.0;
+    final forwardOffset = _laserParticleRandomBetween(10, 92);
+    final sideOffset =
+        side *
+        (laser.activeCoreWidth * 0.5 + _laserParticleRandomBetween(10, 44));
+    final speed = _laserParticleRandomBetween(1550, 2700);
+    final height = kind == TankLaserParticleKind.colorDodge
+        ? _laserParticleRandomBetween(48, 82)
+        : _laserParticleRandomBetween(34, 58);
+    final particle = _acquireLaserParticle();
+    particle.activate(
+      kind: kind,
+      lateralOffset: sideOffset,
+      distanceFromMuzzle: forwardOffset,
+      travelSpeed: speed,
+      travelDistance: laser.visualLength + 120,
+      height: height,
+    );
+  }
+
+  void _deactivateLaserParticles() {
+    for (final particle in _laserParticlePool) {
+      if (particle.isActive && !particle.isWarmup) {
+        particle.deactivate();
+      }
+    }
+  }
+
+  TankLaserParticleComponent _acquireLaserParticle() {
+    for (final particle in _laserParticlePool) {
+      if (!particle.isActive) {
+        return particle;
+      }
+    }
+    var oldest = _laserParticlePool.first;
+    for (var index = 1; index < _laserParticlePool.length; index++) {
+      final candidate = _laserParticlePool[index];
+      if (candidate.age > oldest.age) {
+        oldest = candidate;
+      }
+    }
+    return oldest;
+  }
+
+  double _laserParticleRandomBetween(double minimum, double maximum) {
+    return minimum + _laserParticleRandom.nextDouble() * (maximum - minimum);
   }
 
   void _onBulletShellGroundImpact() {
@@ -485,6 +796,10 @@ class TankComponent extends PositionComponent
   void _updateShooting(double dt) {
     const schedulerEpsilon = 0.0000001;
     if (dt < 0) {
+      return;
+    }
+    if (_weaponMode == TankWeaponMode.laser) {
+      _muzzleFlash.advance(dt);
       return;
     }
     if (dt == 0) {
@@ -518,12 +833,58 @@ class TankComponent extends PositionComponent
     }
   }
 
+  void _updateMuzzleSmokeLifecycle(double dt) {
+    if (_rendererWarmupActive || _weaponMode == TankWeaponMode.laser) {
+      return;
+    }
+    if (_triggerHeld) {
+      _continuousFireElapsed += math.max(0, dt);
+      if (_continuousFireElapsed >=
+          TankMuzzleSmokeComponent.sustainedFireDelay) {
+        _muzzleSmokeArmed = true;
+        _muzzleHeatRemaining = TankMuzzleSmokeComponent.heatRetentionDuration;
+      }
+      return;
+    }
+    _muzzleHeatRemaining = math.max(0, _muzzleHeatRemaining - math.max(0, dt));
+    if (!_muzzleSmokePending) {
+      return;
+    }
+    if (!_muzzleFlash.isVisible) {
+      _muzzleSmoke.trigger();
+      _muzzleSmokePending = false;
+    }
+  }
+
+  double _updateMuzzleSmokeAttachment() {
+    _cannon.transform.localToGlobal(
+      _muzzleFlash.position,
+      output: _muzzleSmoke.position,
+    );
+    _muzzleSmoke.position.y += muzzleSmokeVerticalOffset;
+    transform.localToGlobal(
+      _muzzleSmoke.position,
+      output: _muzzleSmokeWorldPosition,
+    );
+    final worldDelta = _hasMuzzleSmokeWorldPosition
+        ? _muzzleSmokeWorldPosition.x - _previousMuzzleSmokeWorldX
+        : 0.0;
+    _previousMuzzleSmokeWorldX = _muzzleSmokeWorldPosition.x;
+    _hasMuzzleSmokeWorldPosition = true;
+    return worldDelta / tankVisualScale;
+  }
+
   void _fireShot() {
     _shotsFired++;
     game.fireSounds.playForBulletLevel(_bulletLevel);
     _muzzleFlash.trigger();
+    if (isMuzzleHot) {
+      _muzzleSmokeArmed = true;
+      _muzzleHeatRemaining = TankMuzzleSmokeComponent.heatRetentionDuration;
+    }
     _ejectBulletShell();
     _cannonPointToWorld(_muzzleFlash.position, _shotOrigin);
+    _emitMuzzleParticles();
     final angleOffsets = _bulletSpreadLevel.angleOffsets;
     _lastShotBulletCount = angleOffsets.length;
     for (var index = 0; index < angleOffsets.length; index++) {
@@ -550,6 +911,78 @@ class TankComponent extends PositionComponent
     var oldest = _bulletPool.first;
     for (var index = 1; index < _bulletPool.length; index++) {
       final candidate = _bulletPool[index];
+      if (candidate.age > oldest.age) {
+        oldest = candidate;
+      }
+    }
+    return oldest;
+  }
+
+  void _emitMuzzleParticles() {
+    const particleCount = TankMuzzleParticleComponent.minimumParticlesPerShot;
+    const middleOutsideGap = 4.0;
+    const bottomInsideInset = 4.0;
+    _lastMuzzleParticleCount = particleCount;
+    final cannonAngle = _cannon.angle;
+    final forwardX = math.sin(cannonAngle);
+    final forwardY = -math.cos(cannonAngle);
+    final rightX = math.cos(cannonAngle);
+    final rightY = math.sin(cannonAngle);
+    final visibleBounds = _muzzleParticlePalette.firstFrameVisibleBounds(
+      horizontalFlip: _muzzleFlash.isHorizontallyFlipped,
+    );
+    final upperSideY = visibleBounds.top + visibleBounds.height * 0.38;
+    for (var index = 0; index < particleCount; index++) {
+      final isBottomEdge = index < 2;
+      final side = index.isEven ? -1.0 : 1.0;
+      final visibleEdgeX = side < 0 ? visibleBounds.left : visibleBounds.right;
+      final edgeOffset = isBottomEdge
+          ? -side * (bottomInsideInset + _muzzleParticleRandomBetween(0, 1.5))
+          : side * (middleOutsideGap + _muzzleParticleRandomBetween(0, 2.5));
+      _muzzleParticleCannonPoint.setValues(
+        _muzzleFlash.position.x + visibleEdgeX + edgeOffset,
+        _muzzleFlash.position.y +
+            (isBottomEdge ? visibleBounds.bottom : upperSideY) +
+            _muzzleParticleRandomBetween(-1.25, 1.25),
+      );
+      _cannonPointToWorld(_muzzleParticleCannonPoint, _muzzleParticleOrigin);
+      final particle = _acquireMuzzleParticle();
+      final forwardSpeed = isBottomEdge
+          ? _muzzleParticleRandomBetween(115, 190)
+          : _muzzleParticleRandomBetween(240, 390);
+      final lateralSpeed =
+          side *
+          (isBottomEdge
+              ? _muzzleParticleRandomBetween(200, 275)
+              : _muzzleParticleRandomBetween(100, 170));
+      particle.activate(
+        colorIndex: _muzzleParticleRandom.nextInt(
+          _muzzleParticlePalette.colors.length,
+        ),
+        x: _muzzleParticleOrigin.x,
+        y: _muzzleParticleOrigin.y,
+        velocityX:
+            _horizontalVelocity +
+            forwardX * forwardSpeed +
+            rightX * lateralSpeed,
+        velocityY: forwardY * forwardSpeed + rightY * lateralSpeed,
+        lifetime: _muzzleParticleRandomBetween(0.14, 0.24),
+        initialScale:
+            tankVisualScale * _muzzleParticleRandomBetween(0.90, 1.35),
+      );
+    }
+    _muzzleParticlesEmitted += particleCount;
+  }
+
+  TankMuzzleParticleComponent _acquireMuzzleParticle() {
+    for (final particle in _muzzleParticlePool) {
+      if (!particle.isActive) {
+        return particle;
+      }
+    }
+    var oldest = _muzzleParticlePool.first;
+    for (var index = 1; index < _muzzleParticlePool.length; index++) {
+      final candidate = _muzzleParticlePool[index];
       if (candidate.age > oldest.age) {
         oldest = candidate;
       }
@@ -618,6 +1051,10 @@ class TankComponent extends PositionComponent
 
   double _randomBetween(double minimum, double maximum) {
     return minimum + _shellRandom.nextDouble() * (maximum - minimum);
+  }
+
+  double _muzzleParticleRandomBetween(double minimum, double maximum) {
+    return minimum + _muzzleParticleRandom.nextDouble() * (maximum - minimum);
   }
 
   void _updateMovement(double dt) {
@@ -712,22 +1149,73 @@ class TankComponent extends PositionComponent
     }
   }
 
-  void _updateAim() {
+  void _updateAim(double dt) {
     if (!_hasPointerTarget) {
       return;
     }
     final localTarget = absoluteToLocal(_pointerTarget);
-    final angle = cannonAngleForTarget(
+    _laserTargetAngle = cannonAngleForTarget(
       horizontalOffset: localTarget.x - cannonPivotX,
       verticalOffset: localTarget.y - cannonPivotY,
       previousAngle: _cannon.angle,
     );
+    if (_weaponMode == TankWeaponMode.bullets || dt <= 0) {
+      _laserAngularVelocity = 0;
+      _applyCannonPose(_laserTargetAngle);
+      return;
+    }
+
+    var remainingTime = dt;
+    var angle = _cannon.angle;
+    while (remainingTime > 0.0000001) {
+      final step = math.min(remainingTime, 1 / 120);
+      final error = math.atan2(
+        math.sin(_laserTargetAngle - angle),
+        math.cos(_laserTargetAngle - angle),
+      );
+      final acceleration = (error * 21 - _laserAngularVelocity * 5.8).clamp(
+        -10.0,
+        10.0,
+      );
+      _laserAngularVelocity = (_laserAngularVelocity + acceleration * step)
+          .clamp(-1.45, 1.45);
+      angle += _laserAngularVelocity * step;
+      if (angle <= -math.pi / 2) {
+        angle = -math.pi / 2;
+        if (_laserAngularVelocity < 0) {
+          _laserAngularVelocity = 0;
+        }
+      } else if (angle >= math.pi / 2) {
+        angle = math.pi / 2;
+        if (_laserAngularVelocity > 0) {
+          _laserAngularVelocity = 0;
+        }
+      }
+      remainingTime -= step;
+    }
+    _applyCannonPose(angle);
+  }
+
+  void _applyCannonPose(double angle) {
     final cannonX = cannonPivotX + math.sin(angle) * cannonArcHorizontalRadius;
     final cannonY =
         cannonPivotY + (1 - math.cos(angle)) * cannonArcVerticalDrop;
     _cannon
       ..angle = angle
       ..position.setValues(cannonX, cannonY);
+  }
+
+  void _updateLaserGeometry() {
+    final laser = _laser;
+    if (laser == null) {
+      return;
+    }
+    _cannonPointToWorld(_muzzleFlash.position, _laserOrigin);
+    laser.setGeometry(
+      origin: _laserOrigin,
+      angle: _cannon.angle,
+      stageSize: game.size,
+    );
   }
 
   void _updateAnimations(double dt) {

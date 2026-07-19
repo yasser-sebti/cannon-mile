@@ -16,15 +16,20 @@ import 'components/effects/plane_smoke_particle_component.dart';
 import 'components/enemies/enemy_plane_component.dart';
 import 'components/enemies/enemy_plane_missile_component.dart';
 import 'components/enemies/enemy_plane_spawn.dart';
+import 'components/enemies/enemy_plane_visual_template.dart';
 import 'components/tank/tank_component.dart';
 import 'components/tank/tank_bullet_component.dart';
 import 'components/tank/tank_bullet_level.dart';
 import 'components/tank/tank_bullet_shell_component.dart';
 import 'components/tank/tank_bullet_spread_level.dart';
 import 'components/tank/tank_fire_rate_level.dart';
+import 'components/tank/tank_laser_component.dart';
+import 'components/tank/tank_laser_particle_component.dart';
 import 'components/tank/tank_movement_mode.dart';
+import 'components/tank/tank_muzzle_particle_component.dart';
 import 'components/tank/tank_motion.dart';
 import 'components/tank/tank_speed_level.dart';
+import 'components/tank/tank_weapon_mode.dart';
 
 /// The root for Cannon Mile gameplay components.
 ///
@@ -39,8 +44,11 @@ class CannonMileWorld extends World with HasGameReference<CannonMileGame> {
     TankBulletSpreadLevel initialBulletSpreadLevel =
         TankBulletSpreadLevel.level1,
     TankSpeedLevel initialSpeedLevel = TankSpeedLevel.level6,
+    TankWeaponMode initialWeaponMode = TankWeaponMode.bullets,
     bool initialPlaneSpawningEnabled = false,
     this.muzzleFlashRandom,
+    this.muzzleParticleRandom,
+    this.laserParticleRandom,
     this.shellRandom,
     math.Random? planeSpawnRandom,
     math.Random? impactRandom,
@@ -49,6 +57,7 @@ class CannonMileWorld extends World with HasGameReference<CannonMileGame> {
        _bulletLevel = initialBulletLevel,
        _bulletSpreadLevel = initialBulletSpreadLevel,
        _speedLevel = initialSpeedLevel,
+       _weaponMode = initialWeaponMode,
        _planeSpawningEnabled = initialPlaneSpawningEnabled,
        _planeSpawnRandom = planeSpawnRandom ?? math.Random(),
        _impactRandom = impactRandom ?? math.Random();
@@ -64,7 +73,10 @@ class CannonMileWorld extends World with HasGameReference<CannonMileGame> {
   TankBulletLevel _bulletLevel;
   TankBulletSpreadLevel _bulletSpreadLevel;
   TankSpeedLevel _speedLevel;
+  TankWeaponMode _weaponMode;
   final math.Random? muzzleFlashRandom;
+  final math.Random? muzzleParticleRandom;
+  final math.Random? laserParticleRandom;
   final math.Random? shellRandom;
   final math.Random _planeSpawnRandom;
   final math.Random _impactRandom;
@@ -74,6 +86,8 @@ class CannonMileWorld extends World with HasGameReference<CannonMileGame> {
   bool _rendererWarmedUp = false;
   Future<void>? _rendererWarmupFuture;
   late final Sprite _planeSprite;
+  late final List<Sprite> _planeFanSprites;
+  late final EnemyPlaneVisualTemplate _planeVisualTemplate;
   late final Vector2 _planeSize;
   late final _PlaneCombatCollisionPass _planeCombatCollisionPass;
   late final _PlaneAttackPass _planeAttackPass;
@@ -111,7 +125,10 @@ class CannonMileWorld extends World with HasGameReference<CannonMileGame> {
   int _lastBulletHitParticleCount = 0;
   int _lastPlaneSmokeParticleCount = 0;
   int _planeMissilesDropped = 0;
+  int _planeMissilesDestroyed = 0;
   int _groundHits = 0;
+  int _laserHits = 0;
+  int _laserTargetsDestroyed = 0;
   double _lastGroundHitVisualScale = double.nan;
   bool _rendererWarmupActive = false;
 
@@ -121,6 +138,13 @@ class CannonMileWorld extends World with HasGameReference<CannonMileGame> {
   TankBulletLevel get bulletLevel => _bulletLevel;
   TankBulletSpreadLevel get bulletSpreadLevel => _bulletSpreadLevel;
   TankSpeedLevel get speedLevel => _speedLevel;
+  TankWeaponMode get weaponMode => _weaponMode;
+  TankLaserComponent? get laser =>
+      _tankCreated && tank.isLoaded ? tank.laser : null;
+  Iterable<TankLaserParticleComponent> get laserParticles =>
+      _tankCreated && tank.isLoaded
+      ? tank.activeLaserParticles
+      : const <TankLaserParticleComponent>[];
   bool get triggerHeld => _triggerHeld;
   bool get planeSpawningEnabled => _planeSpawningEnabled;
   int get planesSpawned => _planesSpawned;
@@ -131,7 +155,10 @@ class CannonMileWorld extends World with HasGameReference<CannonMileGame> {
   int get lastBulletHitParticleCount => _lastBulletHitParticleCount;
   int get lastPlaneSmokeParticleCount => _lastPlaneSmokeParticleCount;
   int get planeMissilesDropped => _planeMissilesDropped;
+  int get planeMissilesDestroyed => _planeMissilesDestroyed;
   int get groundHits => _groundHits;
+  int get laserHits => _laserHits;
+  int get laserTargetsDestroyed => _laserTargetsDestroyed;
   double get timeUntilNextPlane => _timeUntilNextPlane;
   int get pendingPlaneCount => _pendingPlaneSpawns.length;
   int get planePoolCapacity => _planePool.length;
@@ -194,12 +221,31 @@ class CannonMileWorld extends World with HasGameReference<CannonMileGame> {
       );
   Iterable<TankBulletShellComponent> get shells =>
       _tankCreated ? tank.activeShells : const <TankBulletShellComponent>[];
+  Iterable<TankMuzzleParticleComponent> get muzzleParticles => _tankCreated
+      ? tank.activeMuzzleParticles
+      : const <TankMuzzleParticleComponent>[];
 
   @override
   Future<void> onLoad() async {
     await super.onLoad();
     _planeSprite = Sprite(game.images.fromCache(EnemyPlaneComponent.assetPath));
-    _planeSize = EnemyPlaneComponent.sizeForSprite(_planeSprite);
+    final fanImage = game.images.fromCache(EnemyPlaneComponent.fanAssetPath);
+    _planeFanSprites = [
+      for (var index = 0; index < EnemyPlaneComponent.fanFrameCount; index++)
+        Sprite(
+          fanImage,
+          srcPosition: Vector2(EnemyPlaneComponent.fanFrameSourceX(index), 0),
+          srcSize: Vector2(
+            EnemyPlaneComponent.fanFrameWidth,
+            fanImage.height.toDouble(),
+          ),
+        ),
+    ];
+    _planeVisualTemplate = EnemyPlaneVisualTemplate(
+      bodySprite: _planeSprite,
+      fanSprites: _planeFanSprites,
+    );
+    _planeSize = _planeVisualTemplate.size;
     _bulletHitSprites = [
       for (final asset in BulletHitEffectComponent.assetPaths)
         Sprite(game.images.fromCache(asset)),
@@ -244,7 +290,7 @@ class CannonMileWorld extends World with HasGameReference<CannonMileGame> {
     _planePool.addAll(
       List.generate(
         EnemyPlaneSpawnTuning.poolCapacity,
-        (_) => EnemyPlaneComponent(sprite: _planeSprite),
+        (_) => EnemyPlaneComponent(template: _planeVisualTemplate),
         growable: false,
       ),
     );
@@ -285,7 +331,10 @@ class CannonMileWorld extends World with HasGameReference<CannonMileGame> {
     _planeSmokeParticlePool.addAll(
       List.generate(
         PlaneSmokeParticleComponent.poolCapacity,
-        (_) => PlaneSmokeParticleComponent(sprites: _planeSmokeParticleSprites),
+        (_) => PlaneSmokeParticleComponent(
+          sprites: _planeSmokeParticleSprites,
+          worldVelocityProvider: _groundEffectVelocity,
+        ),
         growable: false,
       ),
     );
@@ -333,7 +382,10 @@ class CannonMileWorld extends World with HasGameReference<CannonMileGame> {
       initialBulletLevel: _bulletLevel,
       initialBulletSpreadLevel: _bulletSpreadLevel,
       initialSpeedLevel: _speedLevel,
+      initialWeaponMode: _weaponMode,
       muzzleFlashRandom: muzzleFlashRandom,
+      muzzleParticleRandom: muzzleParticleRandom,
+      laserParticleRandom: laserParticleRandom,
       shellRandom: shellRandom,
     );
     _tankCreated = true;
@@ -350,8 +402,14 @@ class CannonMileWorld extends World with HasGameReference<CannonMileGame> {
       await tank.loaded;
       await tank.initializeProjectilePool();
       game.completeLoadingUnits(1, 'Preparing projectile pool');
+      await tank.initializeMuzzleParticlePool();
+      game.completeLoadingUnits(1, 'Preparing muzzle particle pool');
       await tank.initializeBulletShellPool();
       game.completeLoadingUnits(1, 'Preparing shell pool');
+      await tank.initializeUltimateLaser();
+      game.completeLoadingUnits(1, 'Preparing ultimate beam');
+      await tank.initializeLaserParticlePool();
+      game.completeLoadingUnits(1, 'Preparing laser particle pool');
       _planeCombatCollisionPass = _PlaneCombatCollisionPass(this);
       _planeAttackPass = _PlaneAttackPass(this);
       await addAll([_planeCombatCollisionPass, _planeAttackPass]);
@@ -454,6 +512,7 @@ class CannonMileWorld extends World with HasGameReference<CannonMileGame> {
       (effect) => !effect.isActive,
     )..activateForWarmup(x: center.x + 220, y: groundY, frameIndex: 2);
     tank.beginRendererWarmup(center, horizontalFlip: false);
+    game.completeLoadingUnits(1, 'Warming ultimate beam');
     final collisionWarmupBullet = tank.bulletPoolForCollision.first;
     final collisionProfile = collisionWarmupBullet.collisionProfile;
     final collisionScale = collisionWarmupBullet.collisionPixelScale;
@@ -541,6 +600,17 @@ class CannonMileWorld extends World with HasGameReference<CannonMileGame> {
     _movementMode = mode;
     if (_tankCreated) {
       tank.setMovementMode(mode);
+    }
+  }
+
+  void setWeaponMode(TankWeaponMode mode) {
+    if (_weaponMode == mode) {
+      return;
+    }
+    _weaponMode = mode;
+    _triggerHeld = false;
+    if (_tankCreated) {
+      tank.setWeaponMode(mode);
     }
   }
 
@@ -654,6 +724,7 @@ class CannonMileWorld extends World with HasGameReference<CannonMileGame> {
       }
 
       EnemyPlaneComponent? hitPlane;
+      EnemyPlaneMissileComponent? hitMissile;
       var earliestHitTime = double.infinity;
       var hitX = 0.0;
       var hitY = 0.0;
@@ -668,16 +739,66 @@ class CannonMileWorld extends World with HasGameReference<CannonMileGame> {
           hitX = _candidateHitX;
           hitY = _candidateHitY;
           hitPlane = plane;
+          hitMissile = null;
         }
       }
-      if (hitPlane == null) {
+      for (
+        var missileIndex = 0;
+        missileIndex < _planeMissilePool.length;
+        missileIndex++
+      ) {
+        final missile = _planeMissilePool[missileIndex];
+        if (!missile.isActive || missile.isWarmup) {
+          continue;
+        }
+        if (_findPixelAccurateMissileHit(bullet, missile) &&
+            _candidateHitTime < earliestHitTime) {
+          earliestHitTime = _candidateHitTime;
+          hitX = _candidateHitX;
+          hitY = _candidateHitY;
+          hitPlane = null;
+          hitMissile = missile;
+        }
+      }
+      if (hitPlane == null && hitMissile == null) {
         continue;
       }
 
       _lastResolvedHitX = hitX;
       _lastResolvedHitY = hitY;
-      final planeVelocity = hitPlane.horizontalVelocity;
       bullet.deactivate();
+      if (hitMissile != null) {
+        final destroyed = hitMissile.takeDamage(bullet.damage);
+        game.fireSounds.playMetalHit();
+        _bulletHits++;
+        if (destroyed) {
+          final missileX = hitMissile.position.x;
+          final missileY = hitMissile.position.y;
+          final missileVelocity = hitMissile.velocityX;
+          _activatePlaneExplosion(
+            x: missileX,
+            y: missileY,
+            visualScale: PlaneExplosionComponent.missileVisualScale,
+          );
+          _activatePlaneSmoke(
+            x: missileX,
+            y: missileY,
+            planeVelocity: missileVelocity,
+            visualScale: PlaneSmokeComponent.missileVisualScale,
+          );
+          _emitPlaneSmokeParticles(
+            x: missileX,
+            y: missileY,
+            planeVelocity: missileVelocity,
+            visualScale: PlaneSmokeParticleComponent.missileVisualScale,
+          );
+          hitMissile.deactivate();
+          _planeMissilesDestroyed++;
+        }
+        continue;
+      }
+
+      final planeVelocity = hitPlane!.horizontalVelocity;
       final destroyed = hitPlane.takeDamage(bullet.damage);
       game.fireSounds.playMetalHit();
       _activateBulletHitEffect(
@@ -706,6 +827,467 @@ class CannonMileWorld extends World with HasGameReference<CannonMileGame> {
         }
       }
     }
+  }
+
+  double _laserContactX = 0;
+  double _laserContactY = 0;
+
+  void _resolveLaserCollisions() {
+    if (!_tankCreated || !tank.isLoaded) {
+      return;
+    }
+    final laser = tank.laser;
+    if (laser == null) {
+      return;
+    }
+    laser.resetFrameImpactCounts();
+    if (!laser.isDamageActive) {
+      return;
+    }
+
+    for (var planeIndex = 0; planeIndex < _planePool.length; planeIndex++) {
+      final plane = _planePool[planeIndex];
+      if (!plane.isActive || !_laserHitsPlane(laser, plane)) {
+        continue;
+      }
+      _lastResolvedHitX = _laserContactX;
+      _lastResolvedHitY = _laserContactY;
+      final planeVelocity = plane.horizontalVelocity;
+      plane.takeDamage(plane.maxHealth);
+      _activatePlaneExplosion(x: plane.position.x, y: plane.position.y);
+      _activatePlaneSmoke(
+        x: plane.position.x,
+        y: plane.position.y,
+        planeVelocity: planeVelocity,
+      );
+      _emitPlaneSmokeParticles(
+        x: plane.position.x,
+        y: plane.position.y,
+        planeVelocity: planeVelocity,
+      );
+      plane.deactivate();
+      _planesDestroyed++;
+      _laserHits++;
+      _laserTargetsDestroyed++;
+      laser.recordDestruction();
+      if (_planeSpawningEnabled) {
+        _queueImmediatePlaneReplacement();
+      }
+    }
+
+    for (
+      var missileIndex = 0;
+      missileIndex < _planeMissilePool.length;
+      missileIndex++
+    ) {
+      final missile = _planeMissilePool[missileIndex];
+      if (!missile.isActive ||
+          missile.isWarmup ||
+          !_laserHitsMissile(laser, missile)) {
+        continue;
+      }
+      _lastResolvedHitX = _laserContactX;
+      _lastResolvedHitY = _laserContactY;
+      final missileX = missile.position.x;
+      final missileY = missile.position.y;
+      final missileVelocity = missile.velocityX;
+      missile.takeDamage(missile.maxHealth);
+      _activatePlaneExplosion(
+        x: missileX,
+        y: missileY,
+        visualScale: PlaneExplosionComponent.missileVisualScale,
+      );
+      _activatePlaneSmoke(
+        x: missileX,
+        y: missileY,
+        planeVelocity: missileVelocity,
+        visualScale: PlaneSmokeComponent.missileVisualScale,
+      );
+      _emitPlaneSmokeParticles(
+        x: missileX,
+        y: missileY,
+        planeVelocity: missileVelocity,
+        visualScale: PlaneSmokeParticleComponent.missileVisualScale,
+      );
+      missile.deactivate();
+      _planeMissilesDestroyed++;
+      _laserHits++;
+      _laserTargetsDestroyed++;
+      laser.recordDestruction();
+    }
+  }
+
+  int _laserSweepSampleCount(TankLaserComponent laser) {
+    final angleDelta = math.atan2(
+      math.sin(laser.currentAngle - laser.previousAngle),
+      math.cos(laser.currentAngle - laser.previousAngle),
+    );
+    final originTravel = math.sqrt(
+      math.pow(laser.currentOriginX - laser.previousOriginX, 2) +
+          math.pow(laser.currentOriginY - laser.previousOriginY, 2),
+    );
+    final stageDiagonal = math.sqrt(
+      _stageSize.x * _stageSize.x + _stageSize.y * _stageSize.y,
+    );
+    final outerTravel = originTravel + angleDelta.abs() * stageDiagonal;
+    final widestCore = math.max(laser.previousCoreWidth, laser.activeCoreWidth);
+    final spacing = math.max(2.0, widestCore * 0.30);
+    return math.max(1, (outerTravel / spacing).ceil()).clamp(1, 64);
+  }
+
+  bool _laserHitsPlane(TankLaserComponent laser, EnemyPlaneComponent plane) {
+    final sampleCount = _laserSweepSampleCount(laser);
+    final angleDelta = math.atan2(
+      math.sin(laser.currentAngle - laser.previousAngle),
+      math.cos(laser.currentAngle - laser.previousAngle),
+    );
+    for (var sample = 0; sample <= sampleCount; sample++) {
+      final progress = sample / sampleCount;
+      final originX = _lerpDouble(
+        laser.previousOriginX,
+        laser.currentOriginX,
+        progress,
+      );
+      final originY = _lerpDouble(
+        laser.previousOriginY,
+        laser.currentOriginY,
+        progress,
+      );
+      final angle = laser.previousAngle + angleDelta * progress;
+      final coreWidth = _lerpDouble(
+        laser.previousCoreWidth,
+        laser.activeCoreWidth,
+        progress,
+      );
+      if (coreWidth <= 0) {
+        continue;
+      }
+      final beamLength = TankLaserComponent.lengthToStageEdge(
+        originX: originX,
+        originY: originY,
+        angle: angle,
+        stageWidth: _stageSize.x,
+        stageHeight: _stageSize.y,
+      );
+      final directionX = math.sin(angle);
+      final directionY = -math.cos(angle);
+      final endpointX = originX + directionX * beamLength;
+      final endpointY = originY + directionY * beamLength;
+      final planeX = _lerpDouble(plane.previousX, plane.position.x, progress);
+      final planeY = _lerpDouble(plane.previousY, plane.position.y, progress);
+      final halfCore = coreWidth / 2;
+      if (!_beamBoundsOverlap(
+        originX: originX,
+        originY: originY,
+        endpointX: endpointX,
+        endpointY: endpointY,
+        padding: halfCore,
+        targetX: planeX,
+        targetY: planeY,
+        targetHalfWidth: plane.size.x / 2,
+        targetHalfHeight: plane.size.y / 2,
+      )) {
+        continue;
+      }
+
+      final mask = game.collisionMaskCache.planeMask;
+      var nearestProjection = double.infinity;
+      var found = false;
+      for (
+        var pointIndex = 0;
+        pointIndex < mask.boundaryPointCount;
+        pointIndex++
+      ) {
+        var normalizedX = mask.boundaryXs[pointIndex] / mask.width;
+        if (!plane.movesRight) {
+          normalizedX = 1 - normalizedX;
+        }
+        final worldX = planeX + (normalizedX - 0.5) * plane.size.x;
+        final worldY =
+            planeY +
+            (mask.boundaryYs[pointIndex] / mask.height - 0.5) * plane.size.y;
+        final relativeX = worldX - originX;
+        final relativeY = worldY - originY;
+        final projection = relativeX * directionX + relativeY * directionY;
+        if (projection < 0 || projection > beamLength) {
+          continue;
+        }
+        final perpendicular = (relativeX * -directionY + relativeY * directionX)
+            .abs();
+        if (perpendicular > halfCore || projection >= nearestProjection) {
+          continue;
+        }
+        nearestProjection = projection;
+        _laserContactX = worldX;
+        _laserContactY = worldY;
+        found = true;
+      }
+      if (found) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  bool _laserHitsMissile(
+    TankLaserComponent laser,
+    EnemyPlaneMissileComponent missile,
+  ) {
+    final sampleCount = _laserSweepSampleCount(laser);
+    final beamAngleDelta = math.atan2(
+      math.sin(laser.currentAngle - laser.previousAngle),
+      math.cos(laser.currentAngle - laser.previousAngle),
+    );
+    final missileAngleDelta = math.atan2(
+      math.sin(missile.angle - missile.previousAngle),
+      math.cos(missile.angle - missile.previousAngle),
+    );
+    for (var sample = 0; sample <= sampleCount; sample++) {
+      final progress = sample / sampleCount;
+      final originX = _lerpDouble(
+        laser.previousOriginX,
+        laser.currentOriginX,
+        progress,
+      );
+      final originY = _lerpDouble(
+        laser.previousOriginY,
+        laser.currentOriginY,
+        progress,
+      );
+      final beamAngle = laser.previousAngle + beamAngleDelta * progress;
+      final halfCore =
+          _lerpDouble(
+            laser.previousCoreWidth,
+            laser.activeCoreWidth,
+            progress,
+          ) /
+          2;
+      if (halfCore <= 0) {
+        continue;
+      }
+      final beamLength = TankLaserComponent.lengthToStageEdge(
+        originX: originX,
+        originY: originY,
+        angle: beamAngle,
+        stageWidth: _stageSize.x,
+        stageHeight: _stageSize.y,
+      );
+      final endpointX = originX + math.sin(beamAngle) * beamLength;
+      final endpointY = originY - math.cos(beamAngle) * beamLength;
+      final missileX = _lerpDouble(
+        missile.previousX,
+        missile.position.x,
+        progress,
+      );
+      final missileY = _lerpDouble(
+        missile.previousY,
+        missile.position.y,
+        progress,
+      );
+      if (!_beamBoundsOverlap(
+        originX: originX,
+        originY: originY,
+        endpointX: endpointX,
+        endpointY: endpointY,
+        padding: halfCore,
+        targetX: missileX,
+        targetY: missileY,
+        targetHalfWidth: EnemyPlaneMissileComponent.missileWidth,
+        targetHalfHeight: EnemyPlaneMissileComponent.missileHeight,
+      )) {
+        continue;
+      }
+      final missileAngle = missile.previousAngle + missileAngleDelta * progress;
+      final cosine = math.cos(missileAngle);
+      final sine = math.sin(missileAngle);
+      const halfWidth = EnemyPlaneMissileComponent.missileWidth / 2;
+      const halfHeight = EnemyPlaneMissileComponent.missileHeight / 2;
+      final firstX = missileX - sine * halfHeight;
+      final firstY = missileY + cosine * halfHeight;
+      final secondX = missileX - cosine * halfWidth + sine * halfHeight;
+      final secondY = missileY - sine * halfWidth - cosine * halfHeight;
+      final thirdX = missileX + cosine * halfWidth + sine * halfHeight;
+      final thirdY = missileY + sine * halfWidth - cosine * halfHeight;
+      if (_segmentsWithinDistance(
+            originX,
+            originY,
+            endpointX,
+            endpointY,
+            firstX,
+            firstY,
+            secondX,
+            secondY,
+            halfCore,
+          ) ||
+          _segmentsWithinDistance(
+            originX,
+            originY,
+            endpointX,
+            endpointY,
+            secondX,
+            secondY,
+            thirdX,
+            thirdY,
+            halfCore,
+          ) ||
+          _segmentsWithinDistance(
+            originX,
+            originY,
+            endpointX,
+            endpointY,
+            thirdX,
+            thirdY,
+            firstX,
+            firstY,
+            halfCore,
+          )) {
+        _laserContactX = missileX;
+        _laserContactY = missileY;
+        return true;
+      }
+    }
+    return false;
+  }
+
+  bool _beamBoundsOverlap({
+    required double originX,
+    required double originY,
+    required double endpointX,
+    required double endpointY,
+    required double padding,
+    required double targetX,
+    required double targetY,
+    required double targetHalfWidth,
+    required double targetHalfHeight,
+  }) {
+    return math.min(originX, endpointX) - padding <=
+            targetX + targetHalfWidth &&
+        math.max(originX, endpointX) + padding >= targetX - targetHalfWidth &&
+        math.min(originY, endpointY) - padding <= targetY + targetHalfHeight &&
+        math.max(originY, endpointY) + padding >= targetY - targetHalfHeight;
+  }
+
+  bool _segmentsWithinDistance(
+    double firstStartX,
+    double firstStartY,
+    double firstEndX,
+    double firstEndY,
+    double secondStartX,
+    double secondStartY,
+    double secondEndX,
+    double secondEndY,
+    double distance,
+  ) {
+    if (_segmentsIntersect(
+      firstStartX,
+      firstStartY,
+      firstEndX,
+      firstEndY,
+      secondStartX,
+      secondStartY,
+      secondEndX,
+      secondEndY,
+    )) {
+      return true;
+    }
+    final maximumDistanceSquared = distance * distance;
+    return _pointSegmentDistanceSquared(
+              firstStartX,
+              firstStartY,
+              secondStartX,
+              secondStartY,
+              secondEndX,
+              secondEndY,
+            ) <=
+            maximumDistanceSquared ||
+        _pointSegmentDistanceSquared(
+              firstEndX,
+              firstEndY,
+              secondStartX,
+              secondStartY,
+              secondEndX,
+              secondEndY,
+            ) <=
+            maximumDistanceSquared ||
+        _pointSegmentDistanceSquared(
+              secondStartX,
+              secondStartY,
+              firstStartX,
+              firstStartY,
+              firstEndX,
+              firstEndY,
+            ) <=
+            maximumDistanceSquared ||
+        _pointSegmentDistanceSquared(
+              secondEndX,
+              secondEndY,
+              firstStartX,
+              firstStartY,
+              firstEndX,
+              firstEndY,
+            ) <=
+            maximumDistanceSquared;
+  }
+
+  bool _segmentsIntersect(
+    double firstStartX,
+    double firstStartY,
+    double firstEndX,
+    double firstEndY,
+    double secondStartX,
+    double secondStartY,
+    double secondEndX,
+    double secondEndY,
+  ) {
+    final firstDeltaX = firstEndX - firstStartX;
+    final firstDeltaY = firstEndY - firstStartY;
+    final secondDeltaX = secondEndX - secondStartX;
+    final secondDeltaY = secondEndY - secondStartY;
+    final denominator = firstDeltaX * secondDeltaY - firstDeltaY * secondDeltaX;
+    if (denominator.abs() < 0.0000001) {
+      return false;
+    }
+    final offsetX = secondStartX - firstStartX;
+    final offsetY = secondStartY - firstStartY;
+    final firstProgress =
+        (offsetX * secondDeltaY - offsetY * secondDeltaX) / denominator;
+    final secondProgress =
+        (offsetX * firstDeltaY - offsetY * firstDeltaX) / denominator;
+    return firstProgress >= 0 &&
+        firstProgress <= 1 &&
+        secondProgress >= 0 &&
+        secondProgress <= 1;
+  }
+
+  double _pointSegmentDistanceSquared(
+    double pointX,
+    double pointY,
+    double startX,
+    double startY,
+    double endX,
+    double endY,
+  ) {
+    final deltaX = endX - startX;
+    final deltaY = endY - startY;
+    final lengthSquared = deltaX * deltaX + deltaY * deltaY;
+    if (lengthSquared <= 0.0000001) {
+      final offsetX = pointX - startX;
+      final offsetY = pointY - startY;
+      return offsetX * offsetX + offsetY * offsetY;
+    }
+    final progress =
+        (((pointX - startX) * deltaX + (pointY - startY) * deltaY) /
+                lengthSquared)
+            .clamp(0.0, 1.0);
+    final nearestX = startX + deltaX * progress;
+    final nearestY = startY + deltaY * progress;
+    final offsetX = pointX - nearestX;
+    final offsetY = pointY - nearestY;
+    return offsetX * offsetX + offsetY * offsetY;
+  }
+
+  double _lerpDouble(double from, double to, double progress) {
+    return from + (to - from) * progress;
   }
 
   static const double _maximumPixelSweepStep = 0.5;
@@ -796,6 +1378,87 @@ class CannonMileWorld extends World with HasGameReference<CannonMileGame> {
     return false;
   }
 
+  bool _findPixelAccurateMissileHit(
+    TankBulletComponent bullet,
+    EnemyPlaneMissileComponent missile,
+  ) {
+    if (!_sweptBulletMissileBroadphase(bullet, missile)) {
+      return false;
+    }
+    final entryTime = _collisionInterval[0];
+    final exitTime = _collisionInterval[1];
+    if (_projectilePixelsOverlapMissile(
+      bullet,
+      missile,
+      entryTime,
+      recordContact: true,
+    )) {
+      _candidateHitTime = entryTime;
+      return true;
+    }
+
+    final relativeDeltaX =
+        (bullet.position.x - bullet.previousX) -
+        (missile.position.x - missile.previousX);
+    final relativeDeltaY =
+        (bullet.position.y - bullet.previousY) -
+        (missile.position.y - missile.previousY);
+    final intervalDistance =
+        math.sqrt(
+          relativeDeltaX * relativeDeltaX + relativeDeltaY * relativeDeltaY,
+        ) *
+        (exitTime - entryTime);
+    final sampleCount = math.max(
+      1,
+      (intervalDistance / _maximumPixelSweepStep).ceil(),
+    );
+    var previousTime = entryTime;
+    for (var sample = 1; sample <= sampleCount; sample++) {
+      final sampleTime =
+          entryTime + (exitTime - entryTime) * sample / sampleCount;
+      if (!_projectilePixelsOverlapMissile(
+        bullet,
+        missile,
+        sampleTime,
+        recordContact: false,
+      )) {
+        previousTime = sampleTime;
+        continue;
+      }
+
+      var emptyTime = previousTime;
+      var solidTime = sampleTime;
+      for (
+        var refinement = 0;
+        refinement < _pixelHitRefinementSteps;
+        refinement++
+      ) {
+        final midpoint = (emptyTime + solidTime) / 2;
+        if (_projectilePixelsOverlapMissile(
+          bullet,
+          missile,
+          midpoint,
+          recordContact: false,
+        )) {
+          solidTime = midpoint;
+        } else {
+          emptyTime = midpoint;
+        }
+      }
+      if (_projectilePixelsOverlapMissile(
+        bullet,
+        missile,
+        solidTime,
+        recordContact: true,
+      )) {
+        _candidateHitTime = solidTime;
+        return true;
+      }
+      return false;
+    }
+    return false;
+  }
+
   bool _sweptBulletPlaneBroadphase(
     TankBulletComponent bullet,
     EnemyPlaneComponent plane,
@@ -835,6 +1498,51 @@ class CannonMileWorld extends World with HasGameReference<CannonMileGame> {
       return false;
     }
     return true;
+  }
+
+  bool _sweptBulletMissileBroadphase(
+    TankBulletComponent bullet,
+    EnemyPlaneMissileComponent missile,
+  ) {
+    final startX = bullet.previousCollisionCenterX - missile.previousX;
+    final startY = bullet.previousCollisionCenterY - missile.previousY;
+    final endX = bullet.collisionCenterX - missile.position.x;
+    final endY = bullet.collisionCenterY - missile.position.y;
+    final deltaX = endX - startX;
+    final deltaY = endY - startY;
+    final missileRadius = math.sqrt(
+      EnemyPlaneMissileComponent.missileWidth *
+              EnemyPlaneMissileComponent.missileWidth /
+              4 +
+          EnemyPlaneMissileComponent.missileHeight *
+              EnemyPlaneMissileComponent.missileHeight /
+              4,
+    );
+    final extent = missileRadius + bullet.collisionRadius;
+    var entryTime = 0.0;
+    var exitTime = 1.0;
+    if (!_clipSweepAxis(
+      start: startX,
+      delta: deltaX,
+      minimum: -extent,
+      maximum: extent,
+      interval: _collisionInterval,
+      initialEntry: entryTime,
+      initialExit: exitTime,
+    )) {
+      return false;
+    }
+    entryTime = _collisionInterval[0];
+    exitTime = _collisionInterval[1];
+    return _clipSweepAxis(
+      start: startY,
+      delta: deltaY,
+      minimum: -extent,
+      maximum: extent,
+      interval: _collisionInterval,
+      initialEntry: entryTime,
+      initialExit: exitTime,
+    );
   }
 
   bool _projectilePixelsOverlapPlane(
@@ -885,6 +1593,76 @@ class CannonMileWorld extends World with HasGameReference<CannonMileGame> {
       return true;
     }
     return false;
+  }
+
+  bool _projectilePixelsOverlapMissile(
+    TankBulletComponent bullet,
+    EnemyPlaneMissileComponent missile,
+    double time, {
+    required bool recordContact,
+  }) {
+    final bulletX =
+        bullet.previousX + (bullet.position.x - bullet.previousX) * time;
+    final bulletY =
+        bullet.previousY + (bullet.position.y - bullet.previousY) * time;
+    final missileX =
+        missile.previousX + (missile.position.x - missile.previousX) * time;
+    final missileY =
+        missile.previousY + (missile.position.y - missile.previousY) * time;
+    final angleDelta = math.atan2(
+      math.sin(missile.angle - missile.previousAngle),
+      math.cos(missile.angle - missile.previousAngle),
+    );
+    final missileAngle = missile.previousAngle + angleDelta * time;
+    final missileCosine = math.cos(missileAngle);
+    final missileSine = math.sin(missileAngle);
+    final profile = bullet.collisionProfile;
+    final pixelScale = bullet.collisionPixelScale;
+    final bulletCosine = bullet.angleCosine;
+    final bulletSine = bullet.angleSine;
+
+    for (
+      var pointIndex = 0;
+      pointIndex < profile.boundaryPointCount;
+      pointIndex++
+    ) {
+      final bulletLocalX = profile.boundaryXs[pointIndex] * pixelScale;
+      final bulletLocalY = profile.boundaryYs[pointIndex] * pixelScale;
+      final worldX =
+          bulletX + bulletCosine * bulletLocalX - bulletSine * bulletLocalY;
+      final worldY =
+          bulletY + bulletSine * bulletLocalX + bulletCosine * bulletLocalY;
+      final relativeX = worldX - missileX;
+      final relativeY = worldY - missileY;
+      final missileLocalX = missileCosine * relativeX + missileSine * relativeY;
+      final missileLocalY =
+          -missileSine * relativeX + missileCosine * relativeY;
+      final authoredX =
+          missileLocalX + EnemyPlaneMissileComponent.missileWidth / 2;
+      final authoredY =
+          missileLocalY + EnemyPlaneMissileComponent.missileHeight / 2;
+      if (!_isPointInsideMissileTriangle(authoredX, authoredY)) {
+        continue;
+      }
+      if (recordContact) {
+        _candidateHitX = missile.position.x + (worldX - missileX);
+        _candidateHitY = missile.position.y + (worldY - missileY);
+      }
+      return true;
+    }
+    return false;
+  }
+
+  bool _isPointInsideMissileTriangle(double x, double y) {
+    if (y < 0 || y > EnemyPlaneMissileComponent.missileHeight) {
+      return false;
+    }
+    final halfWidthAtY =
+        EnemyPlaneMissileComponent.missileWidth /
+        2 *
+        (1 - y / EnemyPlaneMissileComponent.missileHeight);
+    return (x - EnemyPlaneMissileComponent.missileWidth / 2).abs() <=
+        halfWidthAtY;
   }
 
   bool _clipSweepAxis({
@@ -952,7 +1730,11 @@ class CannonMileWorld extends World with HasGameReference<CannonMileGame> {
     );
   }
 
-  void _activatePlaneExplosion({required double x, required double y}) {
+  void _activatePlaneExplosion({
+    required double x,
+    required double y,
+    double visualScale = 1,
+  }) {
     var explosion = _planeExplosionPool.first;
     for (var index = 0; index < _planeExplosionPool.length; index++) {
       final candidate = _planeExplosionPool[index];
@@ -964,13 +1746,14 @@ class CannonMileWorld extends World with HasGameReference<CannonMileGame> {
         explosion = candidate;
       }
     }
-    explosion.activate(x: x, y: y);
+    explosion.activate(x: x, y: y, visualScale: visualScale);
   }
 
   void _activatePlaneSmoke({
     required double x,
     required double y,
     required double planeVelocity,
+    double visualScale = 1,
   }) {
     var smoke = _planeSmokePool.first;
     for (var index = 0; index < _planeSmokePool.length; index++) {
@@ -983,7 +1766,12 @@ class CannonMileWorld extends World with HasGameReference<CannonMileGame> {
         smoke = candidate;
       }
     }
-    smoke.activate(x: x, y: y, horizontalVelocity: planeVelocity * 0.12);
+    smoke.activate(
+      x: x,
+      y: y,
+      horizontalVelocity: planeVelocity * 0.12,
+      visualScale: visualScale,
+    );
   }
 
   void _activatePlaneMissile(EnemyPlaneComponent plane) {
@@ -1008,7 +1796,7 @@ class CannonMileWorld extends World with HasGameReference<CannonMileGame> {
       velocityX:
           plane.horizontalVelocity * 0.38 +
           direction * _randomPlaneBetween(85, 155),
-      velocityY: _randomPlaneBetween(45, 90),
+      velocityY: _randomPlaneBetween(38, 76),
     );
     _planeMissilesDropped++;
   }
@@ -1055,6 +1843,7 @@ class CannonMileWorld extends World with HasGameReference<CannonMileGame> {
     required double x,
     required double y,
     required double planeVelocity,
+    double visualScale = 1,
   }) {
     final burstCount = 7 + _impactRandom.nextInt(3);
     final lingeringCount = 7 + _impactRandom.nextInt(3);
@@ -1080,14 +1869,16 @@ class CannonMileWorld extends World with HasGameReference<CannonMileGame> {
           particle.activate(
             type: type,
             artworkIndex: artworkIndex,
-            x: x + _randomImpactBetween(-18, 18),
-            y: y + _randomImpactBetween(-10, 10),
-            velocityX: planeVelocity * 0.20 + _randomImpactBetween(-150, 150),
-            velocityY: _randomImpactBetween(-180, -60),
+            x: x + _randomImpactBetween(-18, 18) * visualScale,
+            y: y + _randomImpactBetween(-10, 10) * visualScale,
+            velocityX:
+                planeVelocity * 0.20 +
+                _randomImpactBetween(-150, 150) * visualScale,
+            velocityY: _randomImpactBetween(-180, -60) * visualScale,
             angularVelocity: _randomImpactBetween(-6, 6),
             activationDelay: _randomImpactBetween(0.015, 0.060),
             lifetime: _randomImpactBetween(0.65, 1.05),
-            initialScale: _randomImpactBetween(0.80, 1.15),
+            initialScale: _randomImpactBetween(0.80, 1.15) * visualScale,
           );
         } else {
           final halfParticleCount = math.max(1, (particleCount - 1) / 2);
@@ -1097,17 +1888,17 @@ class CannonMileWorld extends World with HasGameReference<CannonMileGame> {
           particle.activate(
             type: type,
             artworkIndex: artworkIndex,
-            x: x + _randomImpactBetween(-5, 5),
-            y: y + _randomImpactBetween(-8, 8),
+            x: x + _randomImpactBetween(-5, 5) * visualScale,
+            y: y + _randomImpactBetween(-8, 8) * visualScale,
             velocityX:
                 planeVelocity * 0.08 +
-                plumeDirection * outwardSpeed +
-                _randomImpactBetween(-9, 9),
-            velocityY: _randomImpactBetween(-86, -48),
+                plumeDirection * outwardSpeed * visualScale +
+                _randomImpactBetween(-9, 9) * visualScale,
+            velocityY: _randomImpactBetween(-86, -48) * visualScale,
             angularVelocity: _randomImpactBetween(-3, 3),
             activationDelay: _randomImpactBetween(0.12, 0.30),
             lifetime: _randomImpactBetween(1.35, 2.0),
-            initialScale: _randomImpactBetween(0.90, 1.15),
+            initialScale: _randomImpactBetween(0.90, 1.15) * visualScale,
           );
         }
       }
@@ -1408,6 +2199,7 @@ class _PlaneCombatCollisionPass extends Component {
   void update(double dt) {
     if (!world._rendererWarmupActive && dt >= 0) {
       world._resolveBulletPlaneCollisions();
+      world._resolveLaserCollisions();
     }
   }
 }

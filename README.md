@@ -10,7 +10,23 @@ maximum speed only after the tank is already moving safely. A timestamped
 cursor swipe inside that band can request a temporary 70% dodge boost from a
 standstill without bypassing acceleration, arrival, or the speed-level cap.
 Continuous keeps a persistent, amplified travel animation
-while Boss Fight can settle completely still. Its main track keeps a visible
+while Boss Fight can settle completely still. A seventh test control switches
+between normal projectiles and an unlimited ultimate laser. Holding fire in
+Laser mode instantly snaps a white/yellow/orange beam outward from the exact
+muzzle with no fade-in and overdraws it beyond the screen with no visible
+endpoint. A flattened animated half-ellipse made from the same beam layers
+rounds the origin instead of leaving a clipped edge. The cannon follows through
+a slightly faster but deliberately heavy angular spring while tank movement
+remains unchanged. Sixteen boot-baked beam states provide the breathing Gaussian glow,
+fast shake, and moving shine without runtime blur. Two pooled additive particle
+styles stay rigidly attached to the beam while racing from its base toward the
+screen boundary. At 35%
+power, the bright core pierces every intersected plane and missile and reuses
+their pooled explosion, smoke, and particle effects. A preloaded start cue and
+looping beam bed accompany activation, while muzzle flashes, muzzle particles,
+bullets, casings, gunfire audio, and ammunition remain suppressed.
+
+Its main track keeps a visible
 forward idle crawl in Continuous mode with a stronger idle cadence: slow
 backing retains the forward frame
 order at slightly reduced cadence, while fast backing reverses and boosts the
@@ -24,7 +40,23 @@ a fast four-pose muzzle flash rendered from 16 cached composites with a lighter
 Gaussian halo, three tapered additive speed-lens streaks, and randomized
 horizontal mirror, plays the
 gunfire sound matching the selected bullet level with individually balanced
-volume and subtle randomized `0.95x` to `1.05x` playback speed, then launches a
+volume and subtle randomized `0.95x` to `1.05x` playback speed. Each shot also
+emits four small pooled sparks whose colors and visible edge bounds are sampled
+from the four muzzle-flash artworks. The bottom pair starts near the inner
+muzzle corners with a wide outward angle, while the upper pair begins beyond
+the visible side edges and angles slightly outward. All four then blast along
+the cannon direction, decelerate, fall, shrink, and fade before reuse. Firing
+for at least 0.5 seconds arms a procedural gray heat plume without showing it
+during fire. After release and the final flash, the plume grows and decays for
+2.4 seconds behind the cannon. Heat remains for five seconds, so even one later
+shot refreshes the plume after its flash; a cold single shot still produces no
+smoke. Its upper segments retain their own momentum,
+producing a narrow flag-like wind trail as aim and movement change. Its bottom
+uses a heavy fixed anchor slightly inside the cannon tip while progressively
+lighter upper segments preserve their world position as the cannon pulls them.
+Continuous mode adds constant right-to-left apparent wind, curving the plume
+left even while the tank is screen-idle. The smoke remains world-up and
+smoothly fades. The shot then launches a
 directional projectile. Alpha-aware swept collision resolves the first visible
 projectile-core pixel against the aircraft silhouette, giving scout planes six
 health and bullet levels one through six matching damage. Surviving planes use
@@ -32,6 +64,21 @@ a vivid 48–65% pure-red overlay that fades over 100 ms; every hit plays a comp
 pre-glowed 70 ms downward ten-frame impact and 12–16 orange physics particles.
 A lethal hit replaces the plane with a pooled six-frame explosion with
 pre-baked color-derived glow. Smoke immediately animates and fades behind it.
+Plane missiles have one health and use swept triangle collision against bullet
+cores; one hit removes the missile and reuses the same glowing six-frame
+explosion at a smaller 48% scale, followed by the same reduced smoke animation
+and burst-plus-lingering smoke-particle physics. Missile launch speed and
+gravity are softened slightly for a slower curved fall.
+Each aircraft composites a separately supplied ten-pose fan behind its nose.
+The optimized `409x78` sheet is cropped with fractional `34.963x78` frames and
+`6.4157`-pixel gaps, enlarged to 129%, played at 90 frame transitions per
+second, shifted slightly right and down on its mount, and mirrored with plane
+direction. The body, fan, mount offsets, collision bounds, and spawn footprint
+are grouped in one shared immutable aircraft visual template; changing its
+single group scale resizes the complete composition without retuning parts.
+For both aircraft and missile explosions, lingering secondary smoke particles
+inherit the same Continuous-mode right-to-left world-scroll speed as ground-hit
+effects; immediate burst particles retain their independent blast physics.
 Fast smoke chunks spread and decay while a second delayed group fans upward in
 an inverted-triangle plume and lingers before shrinking away. Fire rate progresses
 evenly from 5.376 to 7.4 shots per second, bullet artwork has six test levels,
@@ -48,7 +95,7 @@ keep same-direction aircraft at least 1.5 plane widths apart. Destroyed planes
 request a replacement after 60 ms. Active planes periodically drop pooled,
 downward-facing triangle missiles that curve under gravity without dealing
 damage. Ground contact plays a ten-frame burst and delayed five-frame smoke
-above the tank plus one of three non-repeating sounds at 1.715% volume; Continuous
+above the tank plus one of three non-repeating sounds at 2.2295% volume; Continuous
 mode carries both visuals left with the simulated ground.
 Projectiles use a
 96-instance pool with cached paint and spread data. Every trigger also ejects
@@ -220,6 +267,7 @@ CannonMileWorld
             + four-pose additive muzzle-flash effect
         + anchored shaking base
     + pooled bullet projectiles with swept plane collision and level damage
+    + cached piercing ultimate laser with heavy spring aiming
     + pooled bullet shells with gravity, bounce, rotation, and fade-out
     + pooled downward hit effects and orange physics particles
     + six-health pooled scout planes with red hit flashes
@@ -265,8 +313,8 @@ the authoritative state should remain in the game layer.
 - The Flame `GameWidget`.
 - The responsive `VirtualStage`.
 - The startup `BootOverlay`.
-- Six temporary plane-spawn, movement, tank-speed, fire-rate, bullet-artwork,
-  and spread testing overlays.
+- Seven temporary plane-spawn, weapon, movement, tank-speed, fire-rate,
+  bullet-artwork, and spread testing overlays.
 - Primary-mouse trigger input and its lifecycle-safe cancellation.
 - Application lifecycle observation.
 
@@ -302,9 +350,9 @@ these metrics instead of assuming a particular physical resolution.
 
 ### Overlays and Pages
 
-After loading, six safe-area-aware Flutter buttons toggle plane spawning and
-Continuous/Boss Fight movement, and cycle tank speed, fire rate, bullet artwork,
-and spread.
+After loading, seven safe-area-aware Flutter buttons toggle plane spawning,
+Bullet/Laser weapon selection, and Continuous/Boss Fight movement, and cycle
+tank speed, fire rate, bullet artwork, and spread.
 The buttons intercept their own clicks, while the Flame surface receives
 primary-mouse hold for firing and hover/drag motion for aiming and movement. The
 tank and bullets remain rendered by Flame so all behaviors share the same
@@ -335,7 +383,7 @@ infrastructure. It provides:
 - Disabled-state handling.
 - Safe cancellation and disposal.
 
-All six prototype testing buttons use this behavior. Future buttons should compose
+All seven prototype testing buttons use this behavior. Future buttons should compose
 their visual style around it rather than duplicating press animation logic.
 
 ## Loading Architecture
@@ -351,10 +399,13 @@ The production visual sequence is:
 4. Hold the completed state for 300 ms.
 5. Fade the loading overlay out over 800 ms.
 
-The default boot pipeline resolves the Orange Hat Boy logo, decodes all 68
-gameplay images, preloads gunfire, casing-impact, and explosion audio, bakes 64 track-morph samples, six
-projectile brightness sprites, and 16 complete muzzle frames, creates the
-projectile, shell, aircraft, missile, ground-impact, explosion, smoke, and particle pools, builds immutable plane
+The default boot pipeline resolves the Orange Hat Boy logo, decodes all 71
+gameplay images, preloads gunfire, casing-impact, explosion, and laser audio,
+bakes 64 track-morph samples, six
+projectile brightness sprites, 16 complete muzzle frames, and 16 cached laser
+beam states, creates the
+projectile, shell, aircraft, missile, ground-impact, explosion, smoke, muzzle,
+and laser-particle pools, builds immutable plane
 and projectile alpha masks, pre-bakes ten glowing impact frames, and renders
 two covered warm-up frames.
 Gameplay uses the baked results without runtime Gaussian filters, effect blend
@@ -432,25 +483,25 @@ multipliers of 74%, 77%, 80%, and 83%, baked without changing alpha or modifying
 their source artwork. Each bullet level selects its matching `gunfire1.wav` through
 `gunfire6.wav` sound once per shot, including spread shots. Every playback uses
 a uniformly randomized `0.95x` to `1.05x` speed for subtle pitch and timing
-variation. Gunfire 1 remains at 15.925% volume; gunfire 2 uses 14.49175%,
-gunfire 3 uses 20.7025%, gunfire 4 uses 18.63225%, and gunfire 5 and 6 use
-10.35125%. Windows pre-attenuates the WAV data and prepares a
+variation. Gunfire 1 uses 20.7025% volume; gunfire 2 uses 18.839275%,
+gunfire 3 uses 26.91325%, gunfire 4 uses 24.221925%, and gunfire 5 and 6 use
+13.456625%. Windows pre-attenuates the WAV data and prepares a
 fixed reusable voice pool during loading. A fixed command ring and dedicated
 audio worker keep reset and playback calls off Flutter's render thread while
 eliminating per-shot sample copies, volume loops, device creation, and unbounded
 long-tail overlap. Other platforms
 preload an equivalent bounded pool.
-The four bullet-drop files share the same preloaded audio path at 21% volume.
+The four bullet-drop files share the same preloaded audio path at 27.3% volume.
 Their randomized selection excludes the previously played clip, while a
 simulation-time cooldown and bounded voice count prevent dense shell landings
 from stacking long audio tails.
-The three bomb-explosion files play on missile-ground contact at 1.715% volume with
+The three bomb-explosion files play on missile-ground contact at 2.2295% volume with
 subtle `0.95x`–`1.05x` pitch variation and no immediate clip repetition. Eight
 preloaded voices per clip share the same non-blocking worker queue as gunfire.
 A saturated variation spills into another available clip instead of cutting
 off an active explosion tail.
 Every confirmed projectile-plane collision also selects one of three metal-hit
-clips without repeating the previous clip. These impacts play at 4.2% volume
+clips without repeating the previous clip. These impacts play at 5.46% volume
 with independently randomized `0.90x`–`1.10x` speed. Eight pre-created voices
 per clip provide 24 overlapping impacts; a saturated variation spills into
 another available clip instead of restarting, delaying, or muting the hit.
@@ -599,13 +650,20 @@ Build and launch the Windows release application:
 run_cannon_mile_windows.bat
 ```
 
-Both launchers:
+Both launchers are offline-first. A dependency fingerprint skips Pub entirely
+when `package_config.json`, the locked packages, and the Flutter SDK are still
+valid. When setup changes, the launcher tries `flutter pub get --offline`
+against the local cache. Only a genuinely missing package permits one automatic
+online attempt for that exact dependency state; failed attempts are not
+repeated on every launch.
 
-1. Find Flutter.
-2. Remove stale CMake state when the project path has changed.
-3. Synchronize asset folders.
-4. Run `flutter pub get`.
-5. Run or build the Windows application.
+The release launcher also fingerprints game sources and assets. It starts the
+cached executable directly when current, and only synchronizes assets and runs
+an incremental `flutter build --no-pub` after a source change. Stale CMake state
+is cleaned only when a rebuild is actually required. If an offline rebuild is
+impossible because a newly required package is absent, it launches the last
+cached release with a warning instead of leaving the game unavailable.
+Window-preview rebuilds use the same offline dependency guard.
 
 Run Android directly:
 
@@ -645,7 +703,7 @@ The test suite mirrors the architecture:
 | --- | --- |
 | `test/asset_manifest_test.dart` | Prevents unapproved assets from entering the Flutter bundle |
 | `test/boot_controller_test.dart` | Progress, ordering, deduplication, timeouts, failures, and completion |
-| `test/game_shell_test.dart` | Loading transition, lifecycle-safe held input, all six testing overlays, click isolation, and authoritative settings |
+| `test/game_shell_test.dart` | Loading transition, lifecycle-safe held input, all seven testing overlays, click isolation, and authoritative settings |
 | `test/enemy_plane_spawn_test.dart` | Seeded two-to-four continuous plane waves, fast gaps, burst timing, direction, speed, and altitude-lane variety |
 | `test/plane_combat_test.dart` | Level damage, swept moving-plane collision, replacement traffic, non-damaging missile physics, ground effects, hit flashes, pooled explosions, particles, and frame-rate coverage |
 | `test/tank_pointer_swipe_tracker_test.dart` | Timestamp validation, signed swipe strength, direction changes, cap, reset, and frame-rate-independent decay |
@@ -685,11 +743,11 @@ startup path independent from gameplay content.
 The repository does not currently contain:
 
 - Enemy attacks, player health, terrain, recoil, ammunition, scoring, or
-  authoritative encounter resolution. Current collision only covers player
-  bullets damaging scout planes; casings remain visual only.
+  authoritative encounter resolution. Current collision covers player bullets
+  and the test laser damaging scout planes and missiles; casings remain visual
+  only.
 - Menus, settings, credits, privacy, shops, or game-over screens.
-- Music, sound settings/mixing, fonts, or gameplay backgrounds beyond the six
-  current level-matched gunfire effects.
+- Music, sound settings/mixing, fonts, or gameplay backgrounds.
 - Saves, economy, progression, notifications, or online services.
 
 Those systems should be introduced as Cannon Mile's design becomes concrete,

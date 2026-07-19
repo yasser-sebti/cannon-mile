@@ -23,9 +23,13 @@ import 'components/tank/tank_bullet_shell_component.dart';
 import 'components/tank/tank_bullet_spread_level.dart';
 import 'components/tank/tank_fire_rate_level.dart';
 import 'components/tank/tank_fire_sound_player.dart';
+import 'components/tank/tank_laser_component.dart';
+import 'components/tank/tank_laser_particle_component.dart';
 import 'components/tank/tank_movement_mode.dart';
+import 'components/tank/tank_muzzle_particle_component.dart';
 import 'components/tank/tank_skin.dart';
 import 'components/tank/tank_speed_level.dart';
+import 'components/tank/tank_weapon_mode.dart';
 import 'components/enemies/enemy_plane_component.dart';
 import 'game_loading_progress.dart';
 
@@ -38,10 +42,13 @@ class CannonMileGame extends FlameGame<CannonMileWorld>
     TankBulletSpreadLevel initialBulletSpreadLevel =
         TankBulletSpreadLevel.level1,
     TankSpeedLevel initialSpeedLevel = TankSpeedLevel.level6,
+    TankWeaponMode initialWeaponMode = TankWeaponMode.bullets,
     bool initialPlaneSpawningEnabled = false,
     AssetBundle? assetBundle,
     TankFireSoundPlayer? fireSoundPlayer,
     math.Random? muzzleFlashRandom,
+    math.Random? muzzleParticleRandom,
+    math.Random? laserParticleRandom,
     math.Random? shellRandom,
     math.Random? planeSpawnRandom,
     math.Random? impactRandom,
@@ -52,8 +59,11 @@ class CannonMileGame extends FlameGame<CannonMileWorld>
            initialBulletLevel: initialBulletLevel,
            initialBulletSpreadLevel: initialBulletSpreadLevel,
            initialSpeedLevel: initialSpeedLevel,
+           initialWeaponMode: initialWeaponMode,
            initialPlaneSpawningEnabled: initialPlaneSpawningEnabled,
            muzzleFlashRandom: muzzleFlashRandom,
+           muzzleParticleRandom: muzzleParticleRandom,
+           laserParticleRandom: laserParticleRandom,
            shellRandom: shellRandom,
            planeSpawnRandom: planeSpawnRandom,
            impactRandom: impactRandom,
@@ -74,9 +84,11 @@ class CannonMileGame extends FlameGame<CannonMileWorld>
     ...PlaneSmokeParticleComponent.assetPaths,
     ...GroundHitEffectComponent.assetPaths,
     ...GroundHitSmokeComponent.assetPaths,
+    ...TankLaserParticleComponent.assetPaths,
     EnemyPlaneComponent.assetPath,
+    EnemyPlaneComponent.fanAssetPath,
   ]);
-  static int get loadingUnitCount => preloadImageAssets.length + 20;
+  static int get loadingUnitCount => preloadImageAssets.length + 24;
 
   late final ValueNotifier<GameLoadingProgress> loadingProgress =
       ValueNotifier<GameLoadingProgress>(
@@ -97,15 +109,35 @@ class CannonMileGame extends FlameGame<CannonMileWorld>
   TankBulletLevel get bulletLevel => world.bulletLevel;
   TankBulletSpreadLevel get bulletSpreadLevel => world.bulletSpreadLevel;
   TankSpeedLevel get speedLevel => world.speedLevel;
+  TankWeaponMode get weaponMode => world.weaponMode;
+  TankLaserComponent? get laser => world.laser;
+  double get laserPower => laser?.power ?? 0;
+  double get laserTargetAngle =>
+      laser == null ? 0 : world.tank.laserTargetAngle;
+  double get laserAngle => laser?.currentAngle ?? 0;
+  double get laserAngularVelocity =>
+      laser == null ? 0 : world.tank.laserAngularVelocity;
+  double get laserPulsePhase => laser?.pulsePhase ?? 0;
+  bool get isLaserVisible => laser?.isVisible ?? false;
+  bool get isLaserDamageActive => laser?.isDamageActive ?? false;
+  double get laserLength => laser?.currentLength ?? 0;
+  double get laserCoreWidth => laser?.activeCoreWidth ?? 0;
   bool get planeSpawningEnabled => world.planeSpawningEnabled;
   bool get triggerHeld => world.triggerHeld;
   double get pointerSwipeVelocity => world.pointerSwipeVelocity;
   double get swipeEdgeBoost => world.swipeEdgeBoost;
   Iterable<TankBulletShellComponent> get shells => world.shells;
+  Iterable<TankMuzzleParticleComponent> get muzzleParticles =>
+      world.muzzleParticles;
+  Iterable<TankLaserParticleComponent> get laserParticles =>
+      world.laserParticles;
   int get bulletHits => world.bulletHits;
   int get planesDestroyed => world.planesDestroyed;
   int get planeMissilesDropped => world.planeMissilesDropped;
+  int get planeMissilesDestroyed => world.planeMissilesDestroyed;
   int get groundHits => world.groundHits;
+  int get laserHits => world.laserHits;
+  int get laserTargetsDestroyed => world.laserTargetsDestroyed;
   double get lastResolvedHitX => world.lastResolvedHitX;
   double get lastResolvedHitY => world.lastResolvedHitY;
   int get lastBulletHitParticleCount => world.lastBulletHitParticleCount;
@@ -128,6 +160,18 @@ class CannonMileGame extends FlameGame<CannonMileWorld>
 
   void setMovementMode(TankMovementMode mode) {
     world.setMovementMode(mode);
+  }
+
+  void setWeaponMode(TankWeaponMode mode) {
+    world.setWeaponMode(mode);
+  }
+
+  void toggleWeaponMode() {
+    setWeaponMode(
+      weaponMode == TankWeaponMode.bullets
+          ? TankWeaponMode.laser
+          : TankWeaponMode.bullets,
+    );
   }
 
   void setFireRateLevel(TankFireRateLevel level) {

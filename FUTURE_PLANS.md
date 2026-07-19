@@ -80,6 +80,16 @@ The current project provides:
 - Asset-folder synchronization tooling.
 - Desktop resolution preview launchers.
 - Unit and widget tests for the foundation.
+- A test-only Bullet/Laser selector. The unlimited laser charges while the
+  primary mouse is held, uses heavy spring-lag cannon aim without changing tank
+  movement, and instantly renders 16 boot-baked white/yellow/orange glow states
+  from a matching animated half-ellipse at the muzzle beyond the screen edge
+  with rapid shake, fast beam-anchored side
+  particles, no muzzle-flash decoration, and preloaded start/idle audio. At
+  35% power its core pierces all active
+  planes and missiles with infinite damage while reusing their pooled
+  explosion, smoke, and particle effects. Ammunition, heat, terrain damage,
+  and player damage remain intentionally absent.
 - A first layered tank skin, horizontal mouse following, upper-arc cannon aim,
   an arched cannon mount, safe viewport-edge travel with a continuously eased
   outer-band boost plus a timestamped moderate swipe-dodge override,
@@ -98,10 +108,19 @@ The current project provides:
   600 through the reduced 720 maximum, with velocity-gated edge turbo.
   Projectile speed is fixed, spread
   has five widened symmetric one-to-five shot levels, and each shot uses the
-  gunfire sound matching its bullet level at balanced 10.35125%–20.7025% volume with randomized
+  gunfire sound matching its bullet level at balanced 13.456625%–26.91325% volume with randomized
   `0.95x` to `1.05x` playback speed. Windows routes these sounds through a
   pre-attenuated, fixed runner-native voice pool driven by a non-blocking audio
-  worker, while other targets retain a bounded preloaded pool. Higher artwork levels use restrained render scales
+  worker, while other targets retain a bounded preloaded pool. Every shot emits
+  four small pooled sparks sampled from the muzzle colors and alpha-visible
+  edges. The bottom pair starts near the inner muzzle corners with a wide
+  outward angle, while the upper pair starts beyond both visible sides, with
+  cannon-relative spread, drag, gravity, shrinking, and fade-out. A procedural
+  larger 2.4-second gray-gradient plume then remains muzzle-anchored just above
+  and behind the cannon while staying world-up
+  after firing, or sustains behind active flashes once a hold reaches 1.5
+  seconds. It bends and wavers from tank and cannon motion before fading after
+  release. Higher artwork levels use restrained render scales
   and the first four levels receive progressively lighter RGB-only brightness
   reduction. A seeded-testable scout-plane spawner creates continuous randomized
   two-to-four plane waves, directions, `280–700` speeds, fast gaps, and safe altitude lanes.
@@ -115,7 +134,7 @@ The current project provides:
   level-one-through-six damage, a cached 48–65% pure-red 100 ms overlay fade,
   a tiny pre-glowed 70 ms downward impact animation, and 12–16 pooled orange
   physics particles per contact. Three non-repeating metal-hit clips play at
-  4.2% volume with randomized `0.90x`–`1.10x` speed through 24 pre-created,
+  5.46% volume with randomized `0.90x`–`1.10x` speed through 24 pre-created,
   non-interrupting voices. Saturated metal-hit and ground-explosion variations
   spill into another available clip instead of restarting, delaying, or muting.
   Transparent aircraft corners do not register
@@ -130,7 +149,7 @@ The current project provides:
   delayed smoke frames above the tank, with a shared randomized
   `0.30x`–`0.52x` scale with visibly separated consecutive rolls,
   Continuous-mode ground drift, pre-baked dual-radius outer glow, and randomized
-  non-repeating 1.715%-volume bomb impact audio. Eight voices per clip preserve
+  non-repeating 2.2295%-volume bomb impact audio. Eight voices per clip preserve
   up to 24 overlapping tails and spill across available variations instead of
   resetting an active sound. First casing-ground contacts use four randomized non-repeating
   sounds behind a shared cooldown and bounded voice pool.

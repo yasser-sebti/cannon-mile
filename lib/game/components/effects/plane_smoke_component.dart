@@ -31,6 +31,7 @@ class PlaneSmokeComponent extends SpriteComponent {
   static const double duration = frameDuration * frameCount;
   static const double fadeStartProgress = 0.42;
   static const double artworkScale = 0.48;
+  static const double missileVisualScale = 0.48;
   static const double horizontalDrag = 3.5;
   static const double upwardDriftSpeed = 22;
   static const double finalSizeMultiplier = 0.88;
@@ -58,6 +59,7 @@ class PlaneSmokeComponent extends SpriteComponent {
   double _fadeProgress = 0;
   double _sizeProgress = 0;
   int _frameIndex = 0;
+  double _visualScale = 1;
 
   bool get isActive => _isActive;
   bool get isWarmup => _isWarmup;
@@ -68,14 +70,18 @@ class PlaneSmokeComponent extends SpriteComponent {
   double get fadeProgress => _fadeProgress;
   double get sizeProgress => _sizeProgress;
   int get frameIndex => _frameIndex;
+  double get visualScale => _visualScale;
 
   void activate({
     required double x,
     required double y,
     required double horizontalVelocity,
+    double visualScale = 1,
   }) {
+    assert(visualScale > 0);
     position.setValues(x, y);
     _horizontalVelocity = horizontalVelocity;
+    _visualScale = visualScale;
     _age = 0;
     _fadeProgress = 0;
     _sizeProgress = 0;
@@ -83,7 +89,10 @@ class PlaneSmokeComponent extends SpriteComponent {
     _isWarmup = false;
     _isActive = true;
     sprite = _sprites.first;
-    size.setValues(_frameWidths.first, _frameHeights.first);
+    size.setValues(
+      _frameWidths.first * _visualScale,
+      _frameHeights.first * _visualScale,
+    );
     paint.color = const Color(0xFFFFFFFF);
   }
 
@@ -97,7 +106,10 @@ class PlaneSmokeComponent extends SpriteComponent {
     _age = 0;
     _frameIndex = frameIndex.clamp(0, frameCount - 1);
     sprite = _sprites[_frameIndex];
-    size.setValues(_frameWidths[_frameIndex], _frameHeights[_frameIndex]);
+    size.setValues(
+      _frameWidths[_frameIndex] * _visualScale,
+      _frameHeights[_frameIndex] * _visualScale,
+    );
   }
 
   void deactivate() {
@@ -108,6 +120,7 @@ class PlaneSmokeComponent extends SpriteComponent {
     _fadeProgress = 0;
     _sizeProgress = 0;
     _frameIndex = 0;
+    _visualScale = 1;
     position.setValues(parkingCoordinate, parkingCoordinate);
     paint.color = const Color(0xFFFFFFFF);
   }
@@ -139,17 +152,19 @@ class PlaneSmokeComponent extends SpriteComponent {
     final frameProgress = exactFrame - exactFrame.floor();
     _sizeProgress = frameProgress * frameProgress * (3 - 2 * frameProgress);
     final followingFrame = (_frameIndex + 1).clamp(0, frameCount - 1);
-    var targetWidth = _frameWidths[followingFrame];
-    var targetHeight = _frameHeights[followingFrame];
+    var targetWidth = _frameWidths[followingFrame] * _visualScale;
+    var targetHeight = _frameHeights[followingFrame] * _visualScale;
     if (_frameIndex == frameCount - 1) {
       targetWidth *= finalSizeMultiplier;
       targetHeight *= finalSizeMultiplier;
     }
     size.setValues(
-      _frameWidths[_frameIndex] +
-          (targetWidth - _frameWidths[_frameIndex]) * _sizeProgress,
-      _frameHeights[_frameIndex] +
-          (targetHeight - _frameHeights[_frameIndex]) * _sizeProgress,
+      _frameWidths[_frameIndex] * _visualScale +
+          (targetWidth - _frameWidths[_frameIndex] * _visualScale) *
+              _sizeProgress,
+      _frameHeights[_frameIndex] * _visualScale +
+          (targetHeight - _frameHeights[_frameIndex] * _visualScale) *
+              _sizeProgress,
     );
 
     final linearFade =

@@ -11,6 +11,7 @@ import 'package:cannon_mile/game/components/tank/tank_fire_rate_level.dart';
 import 'package:cannon_mile/game/components/tank/tank_fire_sound_player.dart';
 import 'package:cannon_mile/game/components/tank/tank_movement_mode.dart';
 import 'package:cannon_mile/game/components/tank/tank_speed_level.dart';
+import 'package:cannon_mile/game/components/tank/tank_weapon_mode.dart';
 import 'package:cannon_mile/game/cannon_mile_game.dart';
 import 'package:cannon_mile/ui/overlays/bullet_level_toggle.dart';
 import 'package:cannon_mile/ui/overlays/bullet_spread_toggle.dart';
@@ -18,6 +19,7 @@ import 'package:cannon_mile/ui/overlays/fire_rate_toggle.dart';
 import 'package:cannon_mile/ui/overlays/movement_mode_toggle.dart';
 import 'package:cannon_mile/ui/overlays/plane_spawn_toggle.dart';
 import 'package:cannon_mile/ui/overlays/tank_speed_toggle.dart';
+import 'package:cannon_mile/ui/overlays/weapon_mode_toggle.dart';
 import 'package:cannon_mile/game/cannon_mile_world.dart';
 import 'package:cannon_mile/ui/stage/game_shell.dart';
 import 'package:flame/game.dart';
@@ -95,6 +97,7 @@ void main() {
     expect(find.byKey(bulletSpreadToggleKey), findsNothing);
     expect(find.byKey(tankSpeedToggleKey), findsNothing);
     expect(find.byKey(planeSpawnToggleKey), findsNothing);
+    expect(find.byKey(weaponModeToggleKey), findsNothing);
 
     await _pumpBootSequence(tester);
     await _awaitGameInitialization(tester, game);
@@ -107,12 +110,14 @@ void main() {
     expect(find.byKey(bulletSpreadToggleKey), findsOneWidget);
     expect(find.byKey(tankSpeedToggleKey), findsOneWidget);
     expect(find.byKey(planeSpawnToggleKey), findsOneWidget);
+    expect(find.byKey(weaponModeToggleKey), findsOneWidget);
     expect(find.text('MODE: CONTINUOUS'), findsOneWidget);
     expect(find.text('FIRE RATE: 1/6'), findsOneWidget);
     expect(find.text('BULLET: 1/6'), findsOneWidget);
     expect(find.text('SPREAD: 1/5'), findsOneWidget);
     expect(find.text('TANK SPEED: 6/6'), findsOneWidget);
     expect(find.text('PLANES: OFF'), findsOneWidget);
+    expect(find.text('WEAPON: BULLETS'), findsOneWidget);
     expect(game.world.children.whereType<TankComponent>(), hasLength(1));
     expect(tester.takeException(), isNull);
   });
@@ -257,6 +262,45 @@ void main() {
     expect(find.text('MODE: CONTINUOUS'), findsOneWidget);
   });
 
+  testWidgets('weapon button selects laser without aiming or firing', (
+    tester,
+  ) async {
+    final game = _createGame();
+    await tester.pumpWidget(
+      MaterialApp(
+        home: GameShell(
+          game: game,
+          bootTasks: _instantTasks(),
+          bootTimings: BootTimings.instant,
+        ),
+      ),
+    );
+    await _pumpBootSequence(tester);
+    await _awaitGameInitialization(tester, game);
+    game.pauseEngine();
+
+    final weaponFinder = find.byKey(weaponModeToggleKey);
+    final pointerBeforeToggle = game.world.tank.pointerTarget;
+    game.setTriggerHeld(true);
+    expect(game.triggerHeld, isTrue);
+
+    await tester.tap(weaponFinder);
+    await tester.pump(const Duration(milliseconds: 61));
+
+    expect(game.weaponMode, TankWeaponMode.laser);
+    expect(game.world.weaponMode, TankWeaponMode.laser);
+    expect(game.world.tank.weaponMode, TankWeaponMode.laser);
+    expect(game.triggerHeld, isFalse);
+    expect(game.world.tank.pointerTarget, pointerBeforeToggle);
+    expect(game.world.tank.shotsFired, 0);
+    expect(find.text('WEAPON: LASER'), findsOneWidget);
+
+    await tester.tap(weaponFinder);
+    await tester.pump(const Duration(milliseconds: 61));
+    expect(game.weaponMode, TankWeaponMode.bullets);
+    expect(find.text('WEAPON: BULLETS'), findsOneWidget);
+  });
+
   testWidgets('fire-rate button is safely placed, cycles, and never fires', (
     tester,
   ) async {
@@ -280,6 +324,7 @@ void main() {
     final speedFinder = find.byKey(tankSpeedToggleKey);
     final modeFinder = find.byKey(movementModeToggleKey);
     final planeFinder = find.byKey(planeSpawnToggleKey);
+    final weaponFinder = find.byKey(weaponModeToggleKey);
     final viewportSize = tester.getSize(find.byType(Scaffold));
     final scale = math.min(
       viewportSize.width / AppConfig.designWidth,
@@ -291,11 +336,13 @@ void main() {
     final speedRect = tester.getRect(speedFinder);
     final modeRect = tester.getRect(modeFinder);
     final planeRect = tester.getRect(planeFinder);
+    final weaponRect = tester.getRect(weaponFinder);
 
     expect(fireRect.top, closeTo(24 * scale, 0.1));
     expect(modeRect.left - fireRect.right, closeTo(12 * scale, 0.1));
     expect(spreadRect.left - bulletRect.right, closeTo(12 * scale, 0.1));
-    expect(bulletRect.left - planeRect.right, closeTo(12 * scale, 0.1));
+    expect(weaponRect.left - planeRect.right, closeTo(12 * scale, 0.1));
+    expect(bulletRect.left - weaponRect.right, closeTo(12 * scale, 0.1));
     expect(speedRect.left - spreadRect.right, closeTo(12 * scale, 0.1));
     expect(fireRect.left - speedRect.right, closeTo(12 * scale, 0.1));
     expect(fireRect.width, closeTo(190 * scale, 0.1));

@@ -20,11 +20,15 @@ class FireAudioPlayer {
   bool LoadPackagedSounds(const std::array<double, 6>& volumes,
                           const std::array<double, 4>& drop_volumes,
                           const std::array<double, 3>& explosion_volumes,
-                          const std::array<double, 3>& metal_hit_volumes);
+                          const std::array<double, 3>& metal_hit_volumes,
+                          double laser_start_volume,
+                          double laser_idle_volume);
   bool QueuePlay(size_t sound_index, double playback_rate);
   bool QueueBulletDrop(size_t sound_index, double playback_rate);
   bool QueueExplosion(size_t sound_index, double playback_rate);
   bool QueueMetalHit(size_t sound_index, double playback_rate);
+  bool QueueLaserStart();
+  bool QueueLaserStop();
   bool is_loaded() const { return is_loaded_; }
 
  private:
@@ -44,7 +48,9 @@ class FireAudioPlayer {
       kGunfire,
       kBulletDrop,
       kExplosion,
-      kMetalHit
+      kMetalHit,
+      kLaserStart,
+      kLaserStop
     };
 
     Category category = Category::kGunfire;
@@ -67,10 +73,13 @@ class FireAudioPlayer {
   bool PrepareBulletDropVoices();
   bool PrepareExplosionVoices();
   bool PrepareMetalHitVoices();
+  bool PrepareLaserVoices();
   bool PlayNow(size_t sound_index, double playback_rate);
   bool PlayBulletDropNow(size_t sound_index, double playback_rate);
   bool PlayExplosionNow(size_t sound_index, double playback_rate);
   bool PlayMetalHitNow(size_t sound_index, double playback_rate);
+  bool PlayLaserStartNow();
+  void StopLaserNow();
   void StartWorker();
   void StopWorker();
   void WorkerLoop();
@@ -91,6 +100,10 @@ class FireAudioPlayer {
   std::array<std::array<Playback, kMetalHitVoiceCount>, 3>
       metal_hit_playbacks_;
   std::array<size_t, 3> next_metal_hit_indices_{};
+  SoundData laser_start_sound_;
+  SoundData laser_idle_sound_;
+  Playback laser_start_playback_;
+  Playback laser_idle_playback_;
   std::array<PlaybackCommand, kCommandQueueCapacity> command_queue_{};
   size_t command_read_index_ = 0;
   size_t command_write_index_ = 0;

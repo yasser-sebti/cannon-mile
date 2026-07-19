@@ -1,22 +1,7 @@
 @echo off
 setlocal EnableExtensions
-title Cannon Mile - Building...
+title Cannon Mile - Fast Offline Launch
 pushd "%~dp0"
-
-set "CURRENT_DIR=%CD%"
-set "CURRENT_DIR_FORWARD=%CURRENT_DIR:\=/%"
-set "CLEAN_BUILD="
-if exist "build\windows\x64\CMakeCache.txt" (
-  findstr /I /C:"For build in directory: %CURRENT_DIR_FORWARD%/build/windows/x64" "build\windows\x64\CMakeCache.txt" >nul
-  if errorlevel 1 set "CLEAN_BUILD=1"
-)
-
-if defined CLEAN_BUILD (
-  echo.
-  echo  [INFO] Path mismatch detected in CMake cache.
-  echo         Cleaning the stale build directory...
-  rmdir /s /q "build"
-)
 
 set "FLUTTER="
 if defined FLUTTER_ROOT (
@@ -45,24 +30,25 @@ if not exist "%FLUTTER%" (
 
 echo.
 echo  =====================================
-echo    CANNON MILE - BUILD AND LAUNCH
+echo    CANNON MILE - FAST OFFLINE LAUNCH
 echo  =====================================
 echo.
 echo  Closing an existing instance, if present...
 taskkill /F /IM cannon_mile.exe /T >nul 2>&1
 
-echo  Syncing populated asset folders...
-powershell -NoProfile -ExecutionPolicy Bypass -File "tool\sync_asset_folders.ps1"
-if errorlevel 1 goto :failure
+echo  Checking the cached release build...
+powershell -NoProfile -ExecutionPolicy Bypass -File "tool\build_windows_if_needed.ps1" -FlutterPath "%FLUTTER%" -Configuration release
+if errorlevel 1 (
+  if exist "build\windows\x64\runner\Release\cannon_mile.exe" (
+    echo.
+    echo  [WARNING] Rebuild preparation failed; launching the last cached
+    echo            release so the game remains available offline.
+    goto :launch
+  )
+  goto :failure
+)
 
-echo  Preparing Flutter packages...
-call "%FLUTTER%" pub get >nul
-if errorlevel 1 goto :failure
-
-echo  Building the Windows release...
-call "%FLUTTER%" build windows --release --no-pub
-if errorlevel 1 goto :failure
-
+:launch
 echo.
 echo  Launching Cannon Mile...
 start "" "%~dp0build\windows\x64\runner\Release\cannon_mile.exe"
@@ -71,7 +57,7 @@ exit /b 0
 
 :failure
 echo.
-echo [ERROR] The release build or launch preparation failed.
+echo [ERROR] Offline launch preparation failed.
 pause
 popd
 exit /b 1

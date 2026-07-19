@@ -49,7 +49,9 @@ bool FireAudioPlayer::LoadPackagedSounds(
     const std::array<double, 6>& volumes,
     const std::array<double, 4>& drop_volumes,
     const std::array<double, 3>& explosion_volumes,
-    const std::array<double, 3>& metal_hit_volumes) {
+    const std::array<double, 3>& metal_hit_volumes,
+    double laser_start_volume,
+    double laser_idle_volume) {
   if (is_loaded_) {
     return true;
   }
@@ -104,8 +106,19 @@ bool FireAudioPlayer::LoadPackagedSounds(
     }
   }
   if (is_loaded_) {
+    is_loaded_ =
+        LoadWaveFile(sound_directory / L"laser-beam-start.wav",
+                     &laser_start_sound_) &&
+        LoadWaveFile(sound_directory / L"laser-beam.wav", &laser_idle_sound_);
+    if (is_loaded_) {
+      ApplyVolume(&laser_start_sound_, laser_start_volume);
+      ApplyVolume(&laser_idle_sound_, laser_idle_volume);
+    }
+  }
+  if (is_loaded_) {
     is_loaded_ = PreparePlaybackVoices() && PrepareBulletDropVoices() &&
-                 PrepareExplosionVoices() && PrepareMetalHitVoices();
+                 PrepareExplosionVoices() && PrepareMetalHitVoices() &&
+                 PrepareLaserVoices();
   }
   if (is_loaded_) {
     StartWorker();
@@ -275,6 +288,46 @@ bool FireAudioPlayer::PrepareMetalHitVoices() {
   return true;
 }
 
+bool FireAudioPlayer::PrepareLaserVoices() {
+  laser_start_playback_.header.lpData =
+      reinterpret_cast<LPSTR>(laser_start_sound_.samples.data());
+  laser_start_playback_.header.dwBufferLength =
+      static_cast<DWORD>(laser_start_sound_.samples.size());
+  MMRESULT result = waveOutOpen(&laser_start_playback_.output, WAVE_MAPPER,
+                                &laser_start_sound_.format, 0, 0,
+                                CALLBACK_NULL);
+  if (result != MMSYSERR_NOERROR) {
+    return false;
+  }
+  result = waveOutPrepareHeader(laser_start_playback_.output,
+                                &laser_start_playback_.header,
+                                sizeof(laser_start_playback_.header));
+  if (result != MMSYSERR_NOERROR) {
+    return false;
+  }
+  laser_start_playback_.is_prepared = true;
+
+  laser_idle_playback_.header.lpData =
+      reinterpret_cast<LPSTR>(laser_idle_sound_.samples.data());
+  laser_idle_playback_.header.dwBufferLength =
+      static_cast<DWORD>(laser_idle_sound_.samples.size());
+  laser_idle_playback_.header.dwFlags = WHDR_BEGINLOOP | WHDR_ENDLOOP;
+  laser_idle_playback_.header.dwLoops = 0xFFFFFFFF;
+  result = waveOutOpen(&laser_idle_playback_.output, WAVE_MAPPER,
+                       &laser_idle_sound_.format, 0, 0, CALLBACK_NULL);
+  if (result != MMSYSERR_NOERROR) {
+    return false;
+  }
+  result = waveOutPrepareHeader(laser_idle_playback_.output,
+                                &laser_idle_playback_.header,
+                                sizeof(laser_idle_playback_.header));
+  if (result != MMSYSERR_NOERROR) {
+    return false;
+  }
+  laser_idle_playback_.is_prepared = true;
+  return true;
+}
+
 bool FireAudioPlayer::QueuePlay(size_t sound_index, double playback_rate) {
   if (!is_loaded_ || sound_index >= sounds_.size()) {
     return false;
@@ -352,6 +405,46 @@ bool FireAudioPlayer::QueueMetalHit(size_t sound_index,
     }
     command_queue_[command_write_index_] = {
         PlaybackCommand::Category::kMetalHit, sound_index, playback_rate};
+    command_write_index_ =
+        (command_write_index_ + 1) % kCommandQueueCapacity;
+    ++command_count_;
+  }
+  command_ready_.notify_one();
+  return true;
+}
+
+bool FireAudioPlayer::QueueLaserStart() {
+  if (!is_loaded_) {
+    return false;
+  }
+  {
+    std::lock_guard<std::mutex> lock(command_mutex_);
+    if (command_count_ == kCommandQueueCapacity) {
+      command_read_index_ = (command_read_index_ + 1) % kCommandQueueCapacity;
+      --command_count_;
+    }
+    command_queue_[command_write_index_] = {
+        PlaybackCommand::Category::kLaserStart, 0, 1.0};
+    command_write_index_ =
+        (command_write_index_ + 1) % kCommandQueueCapacity;
+    ++command_count_;
+  }
+  command_ready_.notify_one();
+  return true;
+}
+
+bool FireAudioPlayer::QueueLaserStop() {
+  if (!is_loaded_) {
+    return false;
+  }
+  {
+    std::lock_guard<std::mutex> lock(command_mutex_);
+    if (command_count_ == kCommandQueueCapacity) {
+      command_read_index_ = (command_read_index_ + 1) % kCommandQueueCapacity;
+      --command_count_;
+    }
+    command_queue_[command_write_index_] = {
+        PlaybackCommand::Category::kLaserStop, 0, 1.0};
     command_write_index_ =
         (command_write_index_ + 1) % kCommandQueueCapacity;
     ++command_count_;
@@ -465,6 +558,31 @@ bool FireAudioPlayer::PlayMetalHitNow(size_t sound_index,
   return false;
 }
 
+bool FireAudioPlayer::PlayLaserStartNow() {
+  if (!is_loaded_ || laser_start_playback_.output == nullptr ||
+      laser_idle_playback_.output == nullptr) {
+    return false;
+  }
+  waveOutReset(laser_start_playback_.output);
+  waveOutReset(laser_idle_playback_.output);
+  const bool idle_started =
+      waveOutWrite(laser_idle_playback_.output, &laser_idle_playback_.header,
+                   sizeof(laser_idle_playback_.header)) == MMSYSERR_NOERROR;
+  const bool start_played =
+      waveOutWrite(laser_start_playback_.output, &laser_start_playback_.header,
+                   sizeof(laser_start_playback_.header)) == MMSYSERR_NOERROR;
+  return idle_started && start_played;
+}
+
+void FireAudioPlayer::StopLaserNow() {
+  if (laser_start_playback_.output != nullptr) {
+    waveOutReset(laser_start_playback_.output);
+  }
+  if (laser_idle_playback_.output != nullptr) {
+    waveOutReset(laser_idle_playback_.output);
+  }
+}
+
 void FireAudioPlayer::StartWorker() {
   StopWorker();
   {
@@ -515,6 +633,12 @@ void FireAudioPlayer::WorkerLoop() {
         break;
       case PlaybackCommand::Category::kMetalHit:
         PlayMetalHitNow(command.sound_index, command.playback_rate);
+        break;
+      case PlaybackCommand::Category::kLaserStart:
+        PlayLaserStartNow();
+        break;
+      case PlaybackCommand::Category::kLaserStop:
+        StopLaserNow();
         break;
       case PlaybackCommand::Category::kGunfire:
         PlayNow(command.sound_index, command.playback_rate);
@@ -595,6 +719,26 @@ void FireAudioPlayer::StopAll() {
       waveOutClose(playback.output);
       playback = {};
     }
+  }
+  if (laser_start_playback_.output != nullptr) {
+    waveOutReset(laser_start_playback_.output);
+    if (laser_start_playback_.is_prepared) {
+      waveOutUnprepareHeader(laser_start_playback_.output,
+                             &laser_start_playback_.header,
+                             sizeof(laser_start_playback_.header));
+    }
+    waveOutClose(laser_start_playback_.output);
+    laser_start_playback_ = {};
+  }
+  if (laser_idle_playback_.output != nullptr) {
+    waveOutReset(laser_idle_playback_.output);
+    if (laser_idle_playback_.is_prepared) {
+      waveOutUnprepareHeader(laser_idle_playback_.output,
+                             &laser_idle_playback_.header,
+                             sizeof(laser_idle_playback_.header));
+    }
+    waveOutClose(laser_idle_playback_.output);
+    laser_idle_playback_ = {};
   }
   next_playback_indices_.fill(0);
   next_bullet_drop_indices_.fill(0);

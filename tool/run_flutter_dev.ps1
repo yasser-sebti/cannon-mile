@@ -85,20 +85,8 @@ try {
       }
     }
 
-    Write-Host 'Syncing populated asset folders...'
-    & powershell.exe `
-      -NoProfile `
-      -ExecutionPolicy Bypass `
-      -File (Join-Path $projectRoot 'tool\sync_asset_folders.ps1')
-    if ($LASTEXITCODE -ne 0) {
-      throw "Asset synchronization failed with exit code $LASTEXITCODE."
-    }
-
-    Write-Host 'Preparing Flutter packages...'
-    & $FlutterPath pub get
-    if ($LASTEXITCODE -ne 0) {
-      throw "flutter pub get failed with exit code $LASTEXITCODE."
-    }
+    & (Join-Path $projectRoot 'tool\ensure_flutter_dependencies.ps1') `
+      -FlutterPath $FlutterPath
 
     # Remove only orphaned Cannon Mile executables from this workspace. A live
     # session created by this runner is protected by the named mutex above.

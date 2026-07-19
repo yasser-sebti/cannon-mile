@@ -38,7 +38,7 @@ void main() {
   test('gunfire playback uses the boosted shared volume', () {
     expect(
       PooledTankFireSoundPlayer.playbackVolume,
-      closeTo(0.15925, 0.000001),
+      closeTo(0.207025, 0.000001),
     );
   });
 
@@ -95,11 +95,11 @@ void main() {
         ),
       ),
     );
-    expect(PooledTankFireSoundPlayer.bulletDropPlaybackVolume, 0.21);
+    expect(PooledTankFireSoundPlayer.bulletDropPlaybackVolume, 0.273);
   });
 
   test(
-    'ground explosions randomize without repetition at 1.715 percent volume',
+    'ground explosions randomize without repetition at 2.2295 percent volume',
     () {
       final player = SilentTankFireSoundPlayer(random: math.Random(41));
 
@@ -128,7 +128,7 @@ void main() {
           ),
         ),
       );
-      expect(PooledTankFireSoundPlayer.explosionPlaybackVolume, 0.01715);
+      expect(PooledTankFireSoundPlayer.explosionPlaybackVolume, 0.022295);
     },
   );
 
@@ -164,17 +164,33 @@ void main() {
       player.playedMetalHitPlaybackRates.toSet(),
       hasLength(greaterThan(1)),
     );
-    expect(PooledTankFireSoundPlayer.metalHitPlaybackVolume, 0.042);
+    expect(PooledTankFireSoundPlayer.metalHitPlaybackVolume, 0.0546);
   });
 
   test('gunfire one stays fixed while levels two through six are boosted', () {
     expect(PooledTankFireSoundPlayer.playbackVolumes, const [
-      0.15925,
-      0.1449175,
       0.207025,
-      0.1863225,
-      0.1035125,
-      0.1035125,
+      0.18839275,
+      0.2691325,
+      0.24221925,
+      0.13456625,
+      0.13456625,
     ]);
+  });
+
+  test('laser start and looping idle state never stack', () {
+    final player = SilentTankFireSoundPlayer();
+
+    player.startLaser();
+    player.startLaser();
+    expect(player.laserStartCount, 1);
+    expect(player.isLaserIdlePlaying, isTrue);
+
+    player.stopLaser();
+    player.stopLaser();
+    expect(player.laserStopCount, 1);
+    expect(player.isLaserIdlePlaying, isFalse);
+    expect(PooledTankFireSoundPlayer.laserStartSoundAsset, endsWith('.wav'));
+    expect(PooledTankFireSoundPlayer.laserIdleSoundAsset, endsWith('.wav'));
   });
 }

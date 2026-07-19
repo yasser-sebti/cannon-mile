@@ -60,6 +60,8 @@ void main() {
       'assets/effects/ground-hit7.webp',
       'assets/effects/ground-hit8.webp',
       'assets/effects/ground-hit9.webp',
+      'assets/effects/laser-beam-effect-color-dodge.webp',
+      'assets/effects/laser-beam-effect.webp',
       'assets/effects/particle1.webp',
       'assets/effects/particle2.webp',
       'assets/effects/particle3.webp',
@@ -76,6 +78,7 @@ void main() {
       'assets/effects/smoke4.webp',
       'assets/effects/smoke5.webp',
       'assets/effects/smoke6.webp',
+      'assets/enemy/planes/fan-animation.webp',
       'assets/enemy/planes/scout-jet-default.webp',
       'assets/sounds/bomb-explosion1.wav',
       'assets/sounds/bomb-explosion2.wav',
@@ -90,6 +93,8 @@ void main() {
       'assets/sounds/gunfire4.wav',
       'assets/sounds/gunfire5.wav',
       'assets/sounds/gunfire6.wav',
+      'assets/sounds/laser-beam-start.wav',
+      'assets/sounds/laser-beam.wav',
       'assets/sounds/metal-hit1.wav',
       'assets/sounds/metal-hit2.wav',
       'assets/sounds/metal-hit3.wav',
@@ -101,5 +106,13 @@ void main() {
       'assets/tank skins/default-skin/wheel3.webp',
       'assets/tank skins/default-skin/wheel4.webp',
     ]);
+
+    final laserIdle = await rootBundle.load('assets/sounds/laser-beam.wav');
+    final laserIdleBytes = laserIdle.buffer.asUint8List(
+      laserIdle.offsetInBytes,
+      laserIdle.lengthInBytes,
+    );
+    expect(laserIdleBytes.sublist(0, 4), [0x52, 0x49, 0x46, 0x46]);
+    expect(laserIdleBytes.sublist(8, 12), [0x57, 0x41, 0x56, 0x45]);
   });
 }

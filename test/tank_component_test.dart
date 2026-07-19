@@ -11,10 +11,14 @@ import 'package:cannon_mile/game/components/tank/tank_bullet_spread_level.dart';
 import 'package:cannon_mile/game/components/tank/tank_component.dart';
 import 'package:cannon_mile/game/components/tank/tank_fire_rate_level.dart';
 import 'package:cannon_mile/game/components/tank/tank_fire_sound_player.dart';
+import 'package:cannon_mile/game/components/tank/tank_laser_component.dart';
 import 'package:cannon_mile/game/components/tank/tank_movement_mode.dart';
 import 'package:cannon_mile/game/components/tank/tank_motion.dart';
 import 'package:cannon_mile/game/components/tank/tank_muzzle_flash_component.dart';
+import 'package:cannon_mile/game/components/tank/tank_muzzle_particle_component.dart';
+import 'package:cannon_mile/game/components/tank/tank_muzzle_smoke_component.dart';
 import 'package:cannon_mile/game/components/tank/tank_speed_level.dart';
+import 'package:cannon_mile/game/components/tank/tank_weapon_mode.dart';
 import 'package:flame/components.dart';
 import 'package:flame/game.dart';
 import 'package:flutter/gestures.dart';
@@ -25,6 +29,7 @@ Future<CannonMileGame> _loadGame(
   WidgetTester tester, {
   TankMovementMode initialMovementMode = TankMovementMode.continuous,
   math.Random? muzzleFlashRandom,
+  math.Random? muzzleParticleRandom,
   math.Random? shellRandom,
   math.Random? planeSpawnRandom,
   List<GameLoadingProgress>? progressLog,
@@ -34,6 +39,7 @@ Future<CannonMileGame> _loadGame(
     initialMovementMode: initialMovementMode,
     fireSoundPlayer: SilentTankFireSoundPlayer(random: math.Random(42)),
     muzzleFlashRandom: muzzleFlashRandom,
+    muzzleParticleRandom: muzzleParticleRandom,
     shellRandom: shellRandom,
     planeSpawnRandom: planeSpawnRandom,
   );
@@ -192,6 +198,13 @@ void main() {
     );
     expect(tank.muzzleFlashPart.anchor, Anchor.bottomCenter);
     expect(tank.muzzleFlashPart.priority, 1);
+    expect(tank.muzzleSmokePart.parent, same(tank));
+    expect(tank.muzzleSmokePart.anchor, Anchor.bottomCenter);
+    expect(tank.muzzleSmokePart.priority, lessThan(tank.cannonPart.priority));
+    expect(tank.muzzleSmokePart.size, Vector2(26, 82));
+    expect(tank.muzzleSmokePart.usesRuntimeBlur, isFalse);
+    expect(tank.muzzleSmokePart.currentGradientPaint.shader, isNotNull);
+    expect(tank.isMuzzleSmokeVisible, isFalse);
     expect(tank.muzzleFlashPart.sprites, hasLength(4));
     expect(tank.muzzleFlashPart.sprites.map((sprite) => sprite.srcSize), [
       Vector2(46, 84),
@@ -349,6 +362,255 @@ void main() {
     await tester.binding.setSurfaceSize(null);
   });
 
+  testWidgets('upright muzzle smoke trails motion after long firing ends', (
+    tester,
+  ) async {
+    final game = await _loadGame(tester);
+    final tank = game.world.tank;
+    final smoke = tank.muzzleSmokePart;
+
+    tank.setTriggerHeld(true);
+    tank.update(0);
+    tank.update(TankMuzzleSmokeComponent.sustainedFireDelay + 0.01);
+    expect(tank.isMuzzleSmokeArmed, isTrue);
+    expect(tank.isMuzzleSmokePending, isFalse);
+    expect(tank.isMuzzleSmokeVisible, isFalse);
+
+    tank.setTriggerHeld(false);
+    expect(tank.isMuzzleSmokePending, isTrue);
+    tank.update(TankMuzzleFlashComponent.totalDuration + 0.001);
+    expect(tank.isMuzzleSmokePending, isFalse);
+    expect(tank.isMuzzleSmokeVisible, isTrue);
+    expect(smoke.isSustained, isFalse);
+    expect(
+      smoke.absolutePosition.x,
+      closeTo(tank.muzzleFlashPart.absolutePosition.x, 0.0001),
+    );
+    expect(
+      smoke.absolutePosition.y,
+      closeTo(
+        tank.muzzleFlashPart.absolutePosition.y +
+            TankComponent.muzzleSmokeVerticalOffset *
+                TankComponent.tankVisualScale,
+        0.0001,
+      ),
+    );
+    expect(smoke.angle, 0);
+    smoke.update(0.05);
+    expect(smoke.growthProgress, greaterThan(0));
+    expect(smoke.fadeProgress, 0);
+
+    smoke.setMotion(
+      horizontalVelocity: 420,
+      cannonAngle: 0.65,
+      cannonAngularVelocity: 2.4,
+      dt: 0.1,
+    );
+    expect(smoke.angle, 0);
+    expect(smoke.lean, lessThan(0));
+    expect(smoke.motionIntensity, greaterThan(0));
+    final firstWavePhase = smoke.wavePhase;
+    final firstTipOffset = smoke.trailTipOffset;
+    smoke.setMotion(
+      horizontalVelocity: 420,
+      cannonAngle: 0.65,
+      cannonAngularVelocity: 2.4,
+      dt: 0.1,
+    );
+    expect(smoke.wavePhase, isNot(firstWavePhase));
+    expect(smoke.trailTipOffset, isNot(firstTipOffset));
+
+    smoke.update(0.8);
+    expect(smoke.fadeProgress, greaterThan(0));
+    expect(smoke.currentGradientPaint.shader, isNotNull);
+    smoke.update(TankMuzzleSmokeComponent.totalDuration);
+    expect(smoke.isVisible, isFalse);
+
+    await tester.binding.setSurfaceSize(null);
+  });
+
+  testWidgets('muzzle smoke only appears after sustained firing ends', (
+    tester,
+  ) async {
+    final game = await _loadGame(tester);
+    final tank = game.world.tank;
+    final smoke = tank.muzzleSmokePart;
+
+    tank.setTriggerHeld(true);
+    tank.update(0);
+    tank.update(TankMuzzleSmokeComponent.sustainedFireDelay - 0.01);
+    expect(tank.isMuzzleSmokeArmed, isFalse);
+    expect(smoke.isVisible, isFalse);
+
+    tank.update(0.02);
+    expect(tank.isMuzzleSmokeArmed, isTrue);
+    expect(smoke.isVisible, isFalse);
+    expect(tank.isMuzzleSmokePending, isFalse);
+
+    tank.setTriggerHeld(false);
+    expect(tank.isMuzzleSmokeArmed, isFalse);
+    expect(tank.isMuzzleSmokePending, isTrue);
+    expect(smoke.isSustained, isFalse);
+    expect(smoke.isVisible, isFalse);
+    tank.update(TankMuzzleFlashComponent.totalDuration + 0.001);
+    expect(tank.isMuzzleSmokePending, isFalse);
+    expect(smoke.isVisible, isTrue);
+    expect(smoke.fadeProgress, 0);
+    smoke.update(0.7);
+    expect(smoke.fadeProgress, greaterThan(0));
+    smoke.update(TankMuzzleSmokeComponent.totalDuration);
+    expect(smoke.isVisible, isFalse);
+
+    await tester.binding.setSurfaceSize(null);
+  });
+
+  testWidgets('muzzle smoke has a weighted anchor and Continuous wind', (
+    tester,
+  ) async {
+    final game = await _loadGame(tester);
+    final smoke = game.world.tank.muzzleSmokePart;
+
+    smoke.trigger();
+    for (var frame = 0; frame < 120; frame++) {
+      smoke.setMotion(
+        horizontalVelocity: 0,
+        cannonAngle: 0,
+        cannonAngularVelocity: 0,
+        dt: 1 / 120,
+        continuousMode: true,
+      );
+    }
+
+    expect(smoke.anchorOffset, 0);
+    expect(smoke.trailTipOffset, lessThan(-18));
+
+    final tipBeforePull = smoke.trailTipOffset;
+    smoke.setMotion(
+      horizontalVelocity: 0,
+      cannonAngle: 0,
+      cannonAngularVelocity: 0,
+      dt: 1 / 120,
+      anchorHorizontalDelta: 10,
+      continuousMode: true,
+    );
+    expect(smoke.anchorOffset, 0);
+    expect(smoke.trailTipOffset, lessThan(tipBeforePull - 2.5));
+
+    await tester.binding.setSurfaceSize(null);
+  });
+
+  testWidgets('a hot muzzle smokes again after one later shot', (tester) async {
+    final game = await _loadGame(tester);
+    final tank = game.world.tank;
+
+    tank.setTriggerHeld(true);
+    tank.update(0);
+    tank.update(TankMuzzleSmokeComponent.sustainedFireDelay + 0.01);
+    tank.setTriggerHeld(false);
+    tank.update(TankMuzzleFlashComponent.totalDuration + 0.001);
+    expect(tank.isMuzzleSmokeVisible, isTrue);
+    expect(tank.isMuzzleHot, isTrue);
+
+    tank.setTriggerHeld(true);
+    tank.update(0);
+    expect(tank.isMuzzleSmokeVisible, isFalse);
+    expect(tank.isMuzzleSmokeArmed, isTrue);
+    tank.setTriggerHeld(false);
+    tank.update(TankMuzzleFlashComponent.totalDuration + 0.001);
+    expect(tank.isMuzzleSmokeVisible, isTrue);
+    expect(tank.isMuzzleHot, isTrue);
+
+    tank.update(TankMuzzleSmokeComponent.heatRetentionDuration + 0.01);
+    expect(tank.isMuzzleHot, isFalse);
+    tank.setTriggerHeld(true);
+    tank.update(0);
+    tank.setTriggerHeld(false);
+    tank.update(TankMuzzleFlashComponent.totalDuration + 0.001);
+    expect(tank.isMuzzleSmokeVisible, isFalse);
+
+    await tester.binding.setSurfaceSize(null);
+  });
+
+  testWidgets('each shot emits a small pooled muzzle-colored physics burst', (
+    tester,
+  ) async {
+    final game = await _loadGame(tester, muzzleParticleRandom: math.Random(73));
+    final tank = game.world.tank;
+
+    tank.setTriggerHeld(true);
+    tank.update(0);
+    tank.setTriggerHeld(false);
+
+    final particles = game.muzzleParticles.toList(growable: false);
+    expect(particles, hasLength(4));
+    expect(TankMuzzleParticleComponent.minimumParticlesPerShot, 4);
+    expect(TankMuzzleParticleComponent.maximumParticlesPerShot, 4);
+    expect(tank.lastMuzzleParticleCount, particles.length);
+    expect(tank.muzzleParticlesEmitted, particles.length);
+    expect(tank.muzzleParticlePoolCapacity, 48);
+    expect(tank.muzzleParticleColors, hasLength(4));
+    expect(
+      tank.muzzleParticleColors,
+      everyElement(predicate<Color>((color) => color.a == 1)),
+    );
+    final particlesByHeight = particles.toList(growable: false)
+      ..sort((first, second) => first.position.y.compareTo(second.position.y));
+    final middleParticles = particlesByHeight.take(2).toList(growable: false);
+    final bottomParticles = particlesByHeight.skip(2).toList(growable: false);
+    for (final particle in middleParticles) {
+      expect(
+        particle.velocity.x.abs(),
+        lessThan(particle.velocity.y.abs() * 0.72),
+      );
+    }
+    for (final particle in bottomParticles) {
+      expect(particle.velocity.x.abs(), greaterThan(particle.velocity.y.abs()));
+    }
+    final muzzleOrigin = tank.muzzleFlashPart.absolutePosition;
+    final visibleBounds = tank.muzzleParticleSpawnBounds;
+    final worldLeftEdge =
+        muzzleOrigin.x + visibleBounds.left * TankComponent.tankVisualScale;
+    final worldRightEdge =
+        muzzleOrigin.x + visibleBounds.right * TankComponent.tankVisualScale;
+    final bottomLeft = bottomParticles.reduce(
+      (first, second) => first.position.x < second.position.x ? first : second,
+    );
+    final bottomRight = bottomParticles.reduce(
+      (first, second) => first.position.x > second.position.x ? first : second,
+    );
+    expect(bottomLeft.position.x, greaterThan(worldLeftEdge));
+    expect(bottomRight.position.x, lessThan(worldRightEdge));
+    expect(
+      middleParticles.where((particle) => particle.position.x < worldLeftEdge),
+      hasLength(1),
+    );
+    expect(
+      middleParticles.where((particle) => particle.position.x > worldRightEdge),
+      hasLength(1),
+    );
+    for (final particle in particles) {
+      expect(particle.color, tank.muzzleParticleColors[particle.colorIndex]);
+      expect(particle.velocity.x, inInclusiveRange(-275, 275));
+      expect(particle.velocity.y, inInclusiveRange(-390, -115));
+      expect(particle.lifetime, inInclusiveRange(0.14, 0.24));
+      expect(particle.size, Vector2(7, 10));
+      expect(particle.priority, greaterThan(tank.priority));
+      particle.update(0.05);
+      expect(particle.scaleProgress, lessThan(1));
+    }
+    final verticalPositions =
+        particles.map((particle) => particle.position.y).toList(growable: false)
+          ..sort();
+    expect(verticalPositions[2] - verticalPositions[1], greaterThan(8));
+    for (final particle in particles) {
+      particle.update(0.25);
+      expect(particle.isActive, isFalse);
+    }
+    expect(tank.availableMuzzleParticleCount, 48);
+
+    await tester.binding.setSurfaceSize(null);
+  });
+
   testWidgets('each trigger uses its bullet-level sound at a varied speed', (
     tester,
   ) async {
@@ -386,7 +648,7 @@ void main() {
     expect(sounds.playedPlaybackRates.toSet(), hasLength(greaterThan(1)));
     expect(
       PooledTankFireSoundPlayer.playbackVolume,
-      closeTo(0.15925, 0.000001),
+      closeTo(0.207025, 0.000001),
     );
 
     await tester.binding.setSurfaceSize(null);
@@ -620,7 +882,7 @@ void main() {
       expect(world.planes, hasLength(1));
 
       final plane = world.planes.single;
-      expect(plane.sprite!.srcSize, Vector2(357, 108));
+      expect(plane.sprite!.srcSize, Vector2(334, 108));
       expect(plane.size.x, closeTo(TankComponent.renderedTankWidth, 0.0001));
       expect(
         plane.size.x,
@@ -628,11 +890,73 @@ void main() {
       );
       expect(
         plane.position.y - plane.size.y / 2,
-        greaterThanOrEqualTo(EnemyPlaneComponent.safeTopGap),
+        greaterThanOrEqualTo(EnemyPlaneComponent.safeTopGap - 0.001),
       );
       expect(plane.position.x, anyOf(lessThan(0), greaterThan(game.size.x)));
       expect(plane.paint.filterQuality, FilterQuality.high);
       expect(plane.paint.isAntiAlias, isTrue);
+      expect(plane.fanSprites, hasLength(10));
+      expect(
+        plane.fanSize.y,
+        closeTo(
+          78 * plane.size.x / 334 * EnemyPlaneComponent.fanVisualScale,
+          0.0001,
+        ),
+      );
+      expect(plane.fanPosition.x, greaterThan(plane.size.x));
+      expect(plane.fanPosition.y, greaterThan(plane.size.y / 2));
+      expect(EnemyPlaneComponent.fanFramesPerSecond, 90);
+      expect(plane.visualGroupScale, 1);
+      final currentTemplate = plane.visualTemplate;
+      final largerTemplate = currentTemplate.withGroupScale(1.5);
+      expect(
+        largerTemplate.size.x,
+        closeTo(currentTemplate.size.x * 1.5, 0.0001),
+      );
+      expect(
+        largerTemplate.size.y,
+        closeTo(currentTemplate.size.y * 1.5, 0.0001),
+      );
+      expect(
+        largerTemplate.fanSize.x,
+        closeTo(currentTemplate.fanSize.x * 1.5, 0.0001),
+      );
+      expect(
+        largerTemplate.fanSize.y,
+        closeTo(currentTemplate.fanSize.y * 1.5, 0.0001),
+      );
+      expect(
+        largerTemplate.fanPosition.x,
+        closeTo(currentTemplate.fanPosition.x * 1.5, 0.0001),
+      );
+      expect(
+        largerTemplate.fanPosition.y,
+        closeTo(currentTemplate.fanPosition.y * 1.5, 0.0001),
+      );
+      expect(largerTemplate.bodySprite, same(currentTemplate.bodySprite));
+      expect(
+        largerTemplate.fanSprites,
+        orderedEquals(currentTemplate.fanSprites),
+      );
+      expect(
+        world.children.whereType<EnemyPlaneComponent>().every(
+          (candidate) => identical(candidate.visualTemplate, currentTemplate),
+        ),
+        isTrue,
+      );
+      for (var frame = 0; frame < plane.fanSprites.length; frame++) {
+        expect(
+          plane.fanSprites[frame].srcPosition.x,
+          closeTo(EnemyPlaneComponent.fanFrameSourceX(frame), 0.0001),
+        );
+        expect(
+          plane.fanSprites[frame].srcSize,
+          Vector2(EnemyPlaneComponent.fanFrameWidth, 78),
+        );
+      }
+      final initialFanFrame = plane.fanFrameIndex;
+      plane.update(1 / EnemyPlaneComponent.fanFramesPerSecond + 0.001);
+      expect(plane.fanFrameIndex, isNot(initialFanFrame));
       expect(
         plane.altitudeOffset.abs(),
         EnemyPlaneSpawnTuning.oppositeDirectionAltitudeOffset,
@@ -1480,6 +1804,98 @@ void main() {
     await tester.binding.setSurfaceSize(null);
   });
 
+  testWidgets('laser mode charges without producing bullet-shot effects', (
+    tester,
+  ) async {
+    final game = await _loadGame(tester);
+    final tank = game.world.tank;
+    final laser = tank.laserPart;
+    final initialTankX = tank.position.x;
+
+    expect(game.weaponMode, TankWeaponMode.bullets);
+    expect(laser.cachedFrameCount, TankLaserVisualCache.frameCount);
+    expect(laser.cachedOriginCapFrameCount, TankLaserVisualCache.frameCount);
+    expect(laser.hasPrebakedGlow, isTrue);
+    expect(laser.usesRuntimeBlur, isFalse);
+    expect(laser.priority, 15);
+    expect(laser.isVisible, isFalse);
+
+    game.setWeaponMode(TankWeaponMode.laser);
+    tank.setPointerTarget(Vector2(1900, 120));
+    final targetAngleBeforeStep = cannonAngleForTarget(
+      horizontalOffset: 1900 - tank.position.x,
+      verticalOffset: 120 - (tank.position.y - TankComponent.tankHeight),
+      previousAngle: tank.cannonAngle,
+    );
+    tank.update(0.10);
+    expect(tank.cannonAngle, greaterThan(0));
+    expect(tank.cannonAngle, lessThan(targetAngleBeforeStep));
+    expect(tank.position.x, isNot(initialTankX));
+
+    final shotsBefore = tank.shotsFired;
+    final shellsBefore = tank.shellsEjected;
+    final particlesBefore = tank.muzzleParticlesEmitted;
+    final sounds = game.fireSounds as SilentTankFireSoundPlayer;
+    tank.setTriggerHeld(true);
+    expect(sounds.laserStartCount, 1);
+    expect(sounds.isLaserIdlePlaying, isTrue);
+    expect(tank.muzzleParticlesEmitted, particlesBefore);
+    tank.update(0);
+    expect(laser.power, 1);
+    expect(laser.isDamageActive, isTrue);
+    expect(laser.isVisible, isTrue);
+    expect(laser.activeCoreWidth, greaterThan(0));
+    expect(laser.shakeOffset.abs(), greaterThan(0));
+    tank.update(0.01);
+    expect(tank.activeLaserParticles, isNotEmpty);
+    for (final particle in tank.activeLaserParticles) {
+      expect(particle.parent, same(laser));
+      expect(particle.usesMotionPhysics, isFalse);
+      expect(particle.velocity.x, 0);
+      expect(particle.velocity.y, lessThan(0));
+    }
+    expect(tank.shotsFired, shotsBefore);
+    expect(tank.shellsEjected, shellsBefore);
+    expect(tank.isMuzzleFlashVisible, isFalse);
+
+    tank.setTriggerHeld(false);
+    expect(sounds.laserStopCount, 1);
+    expect(sounds.isLaserIdlePlaying, isFalse);
+    tank.update(TankLaserComponent.powerDownDuration);
+    expect(laser.isVisible, isFalse);
+    expect(laser.isDamageActive, isFalse);
+
+    await tester.binding.setSurfaceSize(null);
+  });
+
+  testWidgets('laser reaches the first stage edge from its exact muzzle', (
+    tester,
+  ) async {
+    final game = await _loadGame(tester);
+    final tank = game.world.tank;
+    final laser = tank.laserPart;
+    game.setWeaponMode(TankWeaponMode.laser);
+
+    tank.setPointerTarget(Vector2(tank.position.x, 0));
+    tank.update(0);
+    expect(laser.currentAngle, closeTo(0, 0.0001));
+    expect(laser.currentEndpoint.y, closeTo(0, 0.0001));
+    expect(laser.currentEndpoint.x, closeTo(laser.currentOrigin.x, 0.0001));
+    expect(laser.currentLength, closeTo(laser.currentOrigin.y, 0.0001));
+    expect(laser.visualLength, greaterThan(laser.currentLength));
+
+    final rightLength = TankLaserComponent.lengthToStageEdge(
+      originX: laser.currentOrigin.x,
+      originY: laser.currentOrigin.y,
+      angle: math.pi / 2,
+      stageWidth: game.size.x,
+      stageHeight: game.size.y,
+    );
+    expect(rightLength, closeTo(game.size.x - laser.currentOrigin.x, 0.0001));
+
+    await tester.binding.setSurfaceSize(null);
+  });
+
   testWidgets('game initialization finishes every real preload unit', (
     tester,
   ) async {
@@ -1487,9 +1903,9 @@ void main() {
     final game = await _loadGame(tester, progressLog: progressLog);
     final progress = game.loadingProgress.value;
 
-    expect(CannonMileGame.preloadImageAssets, hasLength(68));
-    expect(CannonMileGame.preloadImageAssets.toSet(), hasLength(68));
-    expect(CannonMileGame.loadingUnitCount, 88);
+    expect(CannonMileGame.preloadImageAssets, hasLength(71));
+    expect(CannonMileGame.preloadImageAssets.toSet(), hasLength(71));
+    expect(CannonMileGame.loadingUnitCount, 95);
     expect(progress.completed, progress.total);
     expect(progress.fraction, 1);
     expect(progress.label, 'Ready');
@@ -1503,6 +1919,8 @@ void main() {
     expect(game.world.availableGroundHitCount, 32);
     expect(game.world.availableGroundHitSmokeCount, 40);
     expect(game.world.tank.availableBulletCount, 96);
+    expect(game.world.tank.availableMuzzleParticleCount, 48);
+    expect(game.world.tank.availableLaserParticleCount, 192);
     expect(game.world.tank.availableShellCount, 24);
     expect(game.world.shells, isEmpty);
     expect(game.world.tank.isMuzzleFlashVisible, isFalse);
@@ -1532,7 +1950,11 @@ void main() {
         'Preparing smoke pools',
         'Preparing aircraft attack effects',
         'Preparing projectile pool',
+        'Preparing muzzle particle pool',
         'Preparing shell pool',
+        'Preparing ultimate beam',
+        'Preparing laser particle pool',
+        'Warming ultimate beam',
         'Warming effects',
         'Warming renderer',
         'Ready',

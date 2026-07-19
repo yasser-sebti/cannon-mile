@@ -4,15 +4,19 @@ import 'dart:ui';
 import 'package:flame/components.dart';
 
 import '../../cannon_mile_game.dart';
-import '../tank/tank_component.dart';
 import '../tank/tank_track_morph_component.dart';
+import 'enemy_plane_visual_template.dart';
 
 class EnemyPlaneComponent extends SpriteComponent
     with HasGameReference<CannonMileGame> {
-  EnemyPlaneComponent({required Sprite sprite})
-    : super(
-        sprite: sprite,
-        size: sizeForSprite(sprite),
+  EnemyPlaneComponent({required EnemyPlaneVisualTemplate template})
+    : _template = template,
+      _fanSprites = template.fanSprites,
+      _fanSize = template.fanSize,
+      _fanPosition = template.fanPosition,
+      super(
+        sprite: template.bodySprite,
+        size: template.size,
         position: Vector2.zero(),
         anchor: Anchor.center,
         paint: createTankSpritePaint(),
@@ -20,6 +24,18 @@ class EnemyPlaneComponent extends SpriteComponent
       );
 
   static const String assetPath = 'enemy/planes/scout-jet-default.webp';
+  static const String fanAssetPath = 'enemy/planes/fan-animation.webp';
+  static const int fanFrameCount = EnemyPlaneVisualTemplate.fanFrameCount;
+  static const double fanFrameWidth = EnemyPlaneVisualTemplate.fanFrameWidth;
+  static const double fanFrameGap = EnemyPlaneVisualTemplate.fanFrameGap;
+  static const double fanFrameStride = EnemyPlaneVisualTemplate.fanFrameStride;
+  static const double fanFramesPerSecond = 90;
+  static const double fanSheetHeight = EnemyPlaneVisualTemplate.fanSheetHeight;
+  static const double fanVisualScale = EnemyPlaneVisualTemplate.fanVisualScale;
+  static const double fanMountInsetSourcePixels =
+      EnemyPlaneVisualTemplate.fanMountInsetSourcePixels;
+  static const double fanMountDownSourcePixels =
+      EnemyPlaneVisualTemplate.fanMountDownSourcePixels;
   static const double safeTopGap = 120;
   static const double maximumAltitudeFraction = 0.45;
   static const double spawnPadding = 36;
@@ -44,7 +60,12 @@ class EnemyPlaneComponent extends SpriteComponent
     },
     growable: false,
   );
+  static final Paint _fanPaint = createTankSpritePaint();
 
+  final EnemyPlaneVisualTemplate _template;
+  final List<Sprite> _fanSprites;
+  final Vector2 _fanSize;
+  final Vector2 _fanPosition;
   final Vector2 _previousPosition = Vector2.zero();
   bool _isActive = false;
   bool _movesRight = true;
@@ -56,6 +77,8 @@ class EnemyPlaneComponent extends SpriteComponent
   double _hitOverlayPeakStrength = 0;
   double _missileDropRemaining = double.infinity;
   bool _missileDropRequested = false;
+  double _fanPhase = 0;
+  int _fanFrameIndex = 0;
 
   bool get isActive => _isActive;
   bool get movesRight => _movesRight;
@@ -69,6 +92,13 @@ class EnemyPlaneComponent extends SpriteComponent
   double get hitOverlayPeakStrength => _hitOverlayPeakStrength;
   double get missileDropRemaining => _missileDropRemaining;
   bool get missileDropRequested => _missileDropRequested;
+  int get fanFrameIndex => _fanFrameIndex;
+  double get fanPhase => _fanPhase;
+  EnemyPlaneVisualTemplate get visualTemplate => _template;
+  double get visualGroupScale => _template.groupScale;
+  Vector2 get fanSize => _fanSize.clone();
+  Vector2 get fanPosition => _fanPosition.clone();
+  List<Sprite> get fanSprites => _fanSprites;
   double get hitOverlayStrength {
     if (!isHitFlashing) {
       return 0;
@@ -89,9 +119,19 @@ class EnemyPlaneComponent extends SpriteComponent
 
   double get horizontalVelocity => movesRight ? speed : -speed;
 
-  static Vector2 sizeForSprite(Sprite sprite) {
-    final width = TankComponent.renderedTankWidth;
-    return Vector2(width, width * sprite.srcSize.y / sprite.srcSize.x);
+  static Vector2 sizeForSprite(
+    Sprite sprite, {
+    double groupScale = EnemyPlaneVisualTemplate.defaultGroupScale,
+  }) {
+    return EnemyPlaneVisualTemplate.bodySizeForSprite(
+      sprite,
+      groupScale: groupScale,
+    );
+  }
+
+  static double fanFrameSourceX(int index) {
+    assert(index >= 0 && index < fanFrameCount);
+    return EnemyPlaneVisualTemplate.fanFrameSourceX(index);
   }
 
   void activate({
@@ -115,6 +155,8 @@ class EnemyPlaneComponent extends SpriteComponent
     _hitOverlayPeakStrength = 0;
     _missileDropRemaining = missileDropDelay;
     _missileDropRequested = false;
+    _fanPhase = 0;
+    _fanFrameIndex = 0;
     _isActive = true;
   }
 
@@ -167,6 +209,8 @@ class EnemyPlaneComponent extends SpriteComponent
     super.update(dt);
     _previousPosition.setFrom(position);
     position.x += horizontalVelocity * dt;
+    _fanPhase = (_fanPhase + dt * fanFramesPerSecond) % fanFrameCount;
+    _fanFrameIndex = _fanPhase.floor();
     _hitFlashRemaining = math.max(0, _hitFlashRemaining - dt);
     if (!_missileDropRequested) {
       _missileDropRemaining -= dt;
@@ -204,6 +248,13 @@ class EnemyPlaneComponent extends SpriteComponent
   }
 
   void _renderPlane(Canvas canvas) {
+    _fanSprites[_fanFrameIndex].render(
+      canvas,
+      position: _fanPosition,
+      size: _fanSize,
+      anchor: Anchor.center,
+      overridePaint: _fanPaint,
+    );
     sprite!.render(canvas, size: size, overridePaint: paint);
     final overlayStrength = hitOverlayStrength;
     if (overlayStrength <= 0) {

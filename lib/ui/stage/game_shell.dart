@@ -16,6 +16,7 @@ import '../overlays/fire_rate_toggle.dart';
 import '../overlays/movement_mode_toggle.dart';
 import '../overlays/plane_spawn_toggle.dart';
 import '../overlays/tank_speed_toggle.dart';
+import '../overlays/weapon_mode_toggle.dart';
 import 'virtual_stage.dart';
 
 class GameShell extends StatefulWidget {
@@ -79,6 +80,12 @@ class _GameShellState extends State<GameShell> with WidgetsBindingObserver {
 
   void _togglePlaneSpawning() {
     _game.togglePlaneSpawning();
+    setState(() {});
+  }
+
+  void _toggleWeaponMode() {
+    _releaseFirePointer();
+    _game.toggleWeaponMode();
     setState(() {});
   }
 
@@ -175,6 +182,11 @@ class _GameShellState extends State<GameShell> with WidgetsBindingObserver {
                               PlaneSpawnToggle(
                                 isEnabled: _game.planeSpawningEnabled,
                                 onToggle: _togglePlaneSpawning,
+                              ),
+                              const SizedBox(width: 12),
+                              WeaponModeToggle(
+                                mode: _game.weaponMode,
+                                onToggle: _toggleWeaponMode,
                               ),
                               const SizedBox(width: 12),
                               BulletLevelToggle(

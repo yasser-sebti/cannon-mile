@@ -23,6 +23,10 @@ abstract interface class TankFireSoundPlayer {
 
   void playMetalHit();
 
+  void startLaser();
+
+  void stopLaser();
+
   Future<void> dispose();
 
   int get playCount;
@@ -48,6 +52,12 @@ abstract interface class TankFireSoundPlayer {
   int? get lastMetalHitSoundIndex;
 
   double? get lastMetalHitPlaybackRate;
+
+  int get laserStartCount;
+
+  int get laserStopCount;
+
+  bool get isLaserIdlePlaying;
 }
 
 double _nextPlaybackRate(math.Random random) {
@@ -142,6 +152,9 @@ class WindowsTankFireSoundPlayer implements TankFireSoundPlayer {
   int _metalHitPlayCount = 0;
   int? _lastMetalHitSoundIndex;
   double? _lastMetalHitPlaybackRate;
+  int _laserStartCount = 0;
+  int _laserStopCount = 0;
+  bool _isLaserIdlePlaying = false;
   bool _isLoaded = false;
 
   @override
@@ -181,6 +194,15 @@ class WindowsTankFireSoundPlayer implements TankFireSoundPlayer {
   double? get lastMetalHitPlaybackRate => _lastMetalHitPlaybackRate;
 
   @override
+  int get laserStartCount => _laserStartCount;
+
+  @override
+  int get laserStopCount => _laserStopCount;
+
+  @override
+  bool get isLaserIdlePlaying => _isLaserIdlePlaying;
+
+  @override
   Future<void> load() async {
     try {
       _isLoaded =
@@ -191,6 +213,10 @@ class WindowsTankFireSoundPlayer implements TankFireSoundPlayer {
                 PooledTankFireSoundPlayer.explosionPlaybackVolumes,
             'metalHitVolumes':
                 PooledTankFireSoundPlayer.metalHitPlaybackVolumes,
+            'laserStartVolume':
+                PooledTankFireSoundPlayer.laserStartPlaybackVolume,
+            'laserIdleVolume':
+                PooledTankFireSoundPlayer.laserIdlePlaybackVolume,
           }) ??
           false;
     } on PlatformException catch (error) {
@@ -262,6 +288,50 @@ class WindowsTankFireSoundPlayer implements TankFireSoundPlayer {
     }
   }
 
+  @override
+  void startLaser() {
+    if (_isLaserIdlePlaying) {
+      return;
+    }
+    _laserStartCount++;
+    _isLaserIdlePlaying = true;
+    if (_isLoaded) {
+      unawaited(_startLaser());
+    }
+  }
+
+  @override
+  void stopLaser() {
+    if (!_isLaserIdlePlaying) {
+      return;
+    }
+    _laserStopCount++;
+    _isLaserIdlePlaying = false;
+    if (_isLoaded) {
+      unawaited(_stopLaser());
+    }
+  }
+
+  Future<void> _startLaser() async {
+    try {
+      await _channel.invokeMethod<bool>('startLaser');
+    } on PlatformException catch (error) {
+      debugPrint('Windows laser playback failed: $error');
+    } on MissingPluginException catch (error) {
+      debugPrint('Windows gunfire channel is unavailable: $error');
+    }
+  }
+
+  Future<void> _stopLaser() async {
+    try {
+      await _channel.invokeMethod<bool>('stopLaser');
+    } on PlatformException catch (error) {
+      debugPrint('Windows laser stop failed: $error');
+    } on MissingPluginException catch (error) {
+      debugPrint('Windows gunfire channel is unavailable: $error');
+    }
+  }
+
   Future<void> _play(int soundIndex, double playbackRate) async {
     try {
       final packedCommand = encodeWindowsFireAudioCommand(
@@ -320,6 +390,10 @@ class WindowsTankFireSoundPlayer implements TankFireSoundPlayer {
 
   @override
   Future<void> dispose() async {
+    if (_isLaserIdlePlaying && _isLoaded) {
+      await _stopLaser();
+    }
+    _isLaserIdlePlaying = false;
     _isLoaded = false;
   }
 }
@@ -352,20 +426,24 @@ class PooledTankFireSoundPlayer implements TankFireSoundPlayer {
     'sounds/metal-hit2.wav',
     'sounds/metal-hit3.wav',
   ];
+  static const String laserStartSoundAsset = 'sounds/laser-beam-start.wav';
+  static const String laserIdleSoundAsset = 'sounds/laser-beam.wav';
+  static const double laserStartPlaybackVolume = 0.34;
+  static const double laserIdlePlaybackVolume = 0.24;
   static const int bulletDropSoundCount = 4;
   static const int explosionSoundCount = 3;
   static const int metalHitSoundCount = 3;
-  static const double playbackVolume = 0.15925;
-  static const double bulletDropPlaybackVolume = 0.21;
-  static const double explosionPlaybackVolume = 0.01715;
-  static const double metalHitPlaybackVolume = 0.042;
+  static const double playbackVolume = 0.207025;
+  static const double bulletDropPlaybackVolume = 0.273;
+  static const double explosionPlaybackVolume = 0.022295;
+  static const double metalHitPlaybackVolume = 0.0546;
   static const List<double> playbackVolumes = [
     playbackVolume,
-    0.1449175,
-    0.207025,
-    0.1863225,
-    0.1035125,
-    0.1035125,
+    0.18839275,
+    0.2691325,
+    0.24221925,
+    0.13456625,
+    0.13456625,
   ];
   static const List<double> bulletDropPlaybackVolumes = [
     bulletDropPlaybackVolume,
@@ -389,6 +467,7 @@ class PooledTankFireSoundPlayer implements TankFireSoundPlayer {
   final List<_RateAwareAudioPool> _bulletDropPools = [];
   final List<_RateAwareAudioPool> _explosionPools = [];
   final List<_RateAwareAudioPool> _metalHitPools = [];
+  final _LaserBeamAudioController _laserAudio = _LaserBeamAudioController();
   int _playCount = 0;
   int? _lastSoundIndex;
   double? _lastPlaybackRate;
@@ -401,6 +480,8 @@ class PooledTankFireSoundPlayer implements TankFireSoundPlayer {
   int _metalHitPlayCount = 0;
   int? _lastMetalHitSoundIndex;
   double? _lastMetalHitPlaybackRate;
+  int _laserStartCount = 0;
+  int _laserStopCount = 0;
   bool _isLoaded = false;
 
   @override
@@ -438,6 +519,15 @@ class PooledTankFireSoundPlayer implements TankFireSoundPlayer {
 
   @override
   double? get lastMetalHitPlaybackRate => _lastMetalHitPlaybackRate;
+
+  @override
+  int get laserStartCount => _laserStartCount;
+
+  @override
+  int get laserStopCount => _laserStopCount;
+
+  @override
+  bool get isLaserIdlePlaying => _laserAudio.isActive;
 
   @override
   Future<void> load() async {
@@ -487,6 +577,7 @@ class PooledTankFireSoundPlayer implements TankFireSoundPlayer {
           ),
         );
       }
+      await _laserAudio.load();
       _isLoaded = true;
     } catch (error, stackTrace) {
       debugPrint('Gunfire audio could not be loaded: $error');
@@ -559,6 +650,24 @@ class PooledTankFireSoundPlayer implements TankFireSoundPlayer {
     unawaited(_playMetalHit(soundIndex, playbackRate));
   }
 
+  @override
+  void startLaser() {
+    if (_laserAudio.isActive) {
+      return;
+    }
+    _laserStartCount++;
+    _laserAudio.start();
+  }
+
+  @override
+  void stopLaser() {
+    if (!_laserAudio.isActive) {
+      return;
+    }
+    _laserStopCount++;
+    _laserAudio.stop();
+  }
+
   Future<void> _play(int soundIndex, double playbackRate) async {
     try {
       await _pools[soundIndex].start(
@@ -620,6 +729,7 @@ class PooledTankFireSoundPlayer implements TankFireSoundPlayer {
   @override
   Future<void> dispose() async {
     _isLoaded = false;
+    await _laserAudio.dispose();
     await _disposePools();
   }
 
@@ -635,6 +745,126 @@ class PooledTankFireSoundPlayer implements TankFireSoundPlayer {
     _explosionPools.clear();
     _metalHitPools.clear();
     await Future.wait(pools.map((pool) => pool.dispose()));
+  }
+}
+
+class _LaserBeamAudioController {
+  AudioPlayer? _startPlayer;
+  AudioPlayer? _idlePlayer;
+  bool _isLoaded = false;
+  bool _isActive = false;
+  bool _isDisposed = false;
+  int _generation = 0;
+
+  bool get isActive => _isActive;
+
+  Future<void> load() async {
+    if (_isLoaded || _isDisposed) {
+      return;
+    }
+    final startPlayer = AudioPlayer();
+    final idlePlayer = AudioPlayer();
+    try {
+      final startData = await rootBundle.load(
+        'assets/${PooledTankFireSoundPlayer.laserStartSoundAsset}',
+      );
+      final idleData = await rootBundle.load(
+        'assets/${PooledTankFireSoundPlayer.laserIdleSoundAsset}',
+      );
+      final startBytes = startData.buffer.asUint8List(
+        startData.offsetInBytes,
+        startData.lengthInBytes,
+      );
+      final idleBytes = idleData.buffer.asUint8List(
+        idleData.offsetInBytes,
+        idleData.lengthInBytes,
+      );
+      await Future.wait([
+        startPlayer.setPlayerMode(PlayerMode.mediaPlayer),
+        idlePlayer.setPlayerMode(PlayerMode.mediaPlayer),
+      ]);
+      await Future.wait([
+        startPlayer.setSource(BytesSource(startBytes, mimeType: 'audio/wav')),
+        idlePlayer.setSource(BytesSource(idleBytes, mimeType: 'audio/wav')),
+      ]);
+      await Future.wait([
+        startPlayer.setReleaseMode(ReleaseMode.stop),
+        idlePlayer.setReleaseMode(ReleaseMode.loop),
+        startPlayer.setVolume(
+          PooledTankFireSoundPlayer.laserStartPlaybackVolume,
+        ),
+        idlePlayer.setVolume(PooledTankFireSoundPlayer.laserIdlePlaybackVolume),
+      ]);
+      if (_isDisposed) {
+        await Future.wait([startPlayer.dispose(), idlePlayer.dispose()]);
+        return;
+      }
+      _startPlayer = startPlayer;
+      _idlePlayer = idlePlayer;
+      _isLoaded = true;
+    } catch (error, stackTrace) {
+      debugPrint('Laser audio could not be loaded: $error');
+      debugPrintStack(stackTrace: stackTrace);
+      await Future.wait([startPlayer.dispose(), idlePlayer.dispose()]);
+    }
+  }
+
+  void start() {
+    if (_isDisposed || _isActive) {
+      return;
+    }
+    _isActive = true;
+    final generation = ++_generation;
+    if (_isLoaded) {
+      unawaited(_start(generation));
+    }
+  }
+
+  Future<void> _start(int generation) async {
+    final startPlayer = _startPlayer;
+    final idlePlayer = _idlePlayer;
+    if (startPlayer == null || idlePlayer == null) {
+      return;
+    }
+    try {
+      await Future.wait([startPlayer.stop(), idlePlayer.stop()]);
+      if (!_isActive || generation != _generation || _isDisposed) {
+        return;
+      }
+      await Future.wait([startPlayer.resume(), idlePlayer.resume()]);
+      if (!_isActive || generation != _generation || _isDisposed) {
+        await Future.wait([startPlayer.stop(), idlePlayer.stop()]);
+      }
+    } catch (error) {
+      debugPrint('Laser audio playback failed: $error');
+    }
+  }
+
+  void stop() {
+    if (!_isActive) {
+      return;
+    }
+    _isActive = false;
+    _generation++;
+    final startPlayer = _startPlayer;
+    final idlePlayer = _idlePlayer;
+    if (_isLoaded && startPlayer != null && idlePlayer != null) {
+      unawaited(Future.wait([startPlayer.stop(), idlePlayer.stop()]));
+    }
+  }
+
+  Future<void> dispose() async {
+    if (_isDisposed) {
+      return;
+    }
+    _isDisposed = true;
+    _isActive = false;
+    _isLoaded = false;
+    _generation++;
+    final players = <AudioPlayer>[?_startPlayer, ?_idlePlayer];
+    _startPlayer = null;
+    _idlePlayer = null;
+    await Future.wait(players.map((player) => player.dispose()));
   }
 }
 
@@ -775,6 +1005,9 @@ class SilentTankFireSoundPlayer implements TankFireSoundPlayer {
   final List<double> _playedExplosionPlaybackRates = [];
   final List<int> _playedMetalHitSoundIndices = [];
   final List<double> _playedMetalHitPlaybackRates = [];
+  int _laserStartCount = 0;
+  int _laserStopCount = 0;
+  bool _isLaserIdlePlaying = false;
 
   List<int> get playedSoundIndices => List.unmodifiable(_playedSoundIndices);
 
@@ -851,6 +1084,15 @@ class SilentTankFireSoundPlayer implements TankFireSoundPlayer {
       : _playedMetalHitPlaybackRates.last;
 
   @override
+  int get laserStartCount => _laserStartCount;
+
+  @override
+  int get laserStopCount => _laserStopCount;
+
+  @override
+  bool get isLaserIdlePlaying => _isLaserIdlePlaying;
+
+  @override
   Future<void> load() async {}
 
   @override
@@ -893,5 +1135,25 @@ class SilentTankFireSoundPlayer implements TankFireSoundPlayer {
   }
 
   @override
-  Future<void> dispose() async {}
+  void startLaser() {
+    if (_isLaserIdlePlaying) {
+      return;
+    }
+    _isLaserIdlePlaying = true;
+    _laserStartCount++;
+  }
+
+  @override
+  void stopLaser() {
+    if (!_isLaserIdlePlaying) {
+      return;
+    }
+    _isLaserIdlePlaying = false;
+    _laserStopCount++;
+  }
+
+  @override
+  Future<void> dispose() async {
+    _isLaserIdlePlaying = false;
+  }
 }

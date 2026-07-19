@@ -8,21 +8,23 @@ import '../tank/tank_track_morph_component.dart';
 enum PlaneSmokeParticleType { burst, lingering }
 
 class PlaneSmokeParticleComponent extends SpriteComponent {
-  PlaneSmokeParticleComponent({required List<Sprite> sprites})
-    : assert(sprites.length == artworkCount),
-      _sprites = sprites,
-      _artworkSizes = [
-        for (var index = 0; index < sprites.length; index++)
-          sizeForSprite(sprites[index], index),
-      ],
-      super(
-        sprite: sprites.first,
-        size: Vector2.zero(),
-        position: Vector2.all(parkingCoordinate),
-        anchor: Anchor.center,
-        paint: createTankSpritePaint(),
-        priority: 4,
-      );
+  PlaneSmokeParticleComponent({
+    required List<Sprite> sprites,
+    required this.worldVelocityProvider,
+  }) : assert(sprites.length == artworkCount),
+       _sprites = sprites,
+       _artworkSizes = [
+         for (var index = 0; index < sprites.length; index++)
+           sizeForSprite(sprites[index], index),
+       ],
+       super(
+         sprite: sprites.first,
+         size: Vector2.zero(),
+         position: Vector2.all(parkingCoordinate),
+         anchor: Anchor.center,
+         paint: createTankSpritePaint(),
+         priority: 4,
+       );
 
   static const int artworkCount = 7;
   static const int poolCapacity = 256;
@@ -35,6 +37,7 @@ class PlaneSmokeParticleComponent extends SpriteComponent {
   static const double maximumSimulationStep = 1 / 120;
   static const double fadeStartProgress = 0.35;
   static const double lingeringFadeStartProgress = 0.55;
+  static const double missileVisualScale = 0.62;
   static const double parkingCoordinate = -10000;
   static const List<double> targetHeights = [16, 18, 17, 10, 17, 9, 10];
   static const List<String> assetPaths = [
@@ -53,6 +56,7 @@ class PlaneSmokeParticleComponent extends SpriteComponent {
 
   final List<Sprite> _sprites;
   final List<Vector2> _artworkSizes;
+  final double Function() worldVelocityProvider;
   final Vector2 _velocity = Vector2.zero();
   bool _isActive = false;
   bool _isWarmup = false;
@@ -79,6 +83,8 @@ class PlaneSmokeParticleComponent extends SpriteComponent {
   double get scaleProgress => _scaleProgress;
   double get fadeProgress => _fadeProgress;
   Vector2 get velocity => _velocity.clone();
+  double get inheritedWorldVelocity =>
+      isLingering ? worldVelocityProvider() : 0;
 
   static Vector2 sizeForSprite(Sprite sprite, int artworkIndex) {
     final height = targetHeights[artworkIndex];
@@ -200,7 +206,9 @@ class PlaneSmokeParticleComponent extends SpriteComponent {
           _velocity.y * math.exp(-activeAirResistance * dt) +
           activeGravity * dt;
     _angularVelocity *= math.exp(-activeAngularResistance * dt);
-    position.addScaled(_velocity, dt);
+    position
+      ..x += (_velocity.x + inheritedWorldVelocity) * dt
+      ..y += _velocity.y * dt;
     angle += _angularVelocity * dt;
 
     final progress = (lifeAge / _lifetime).clamp(0.0, 1.0);

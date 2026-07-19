@@ -75,10 +75,8 @@ if ($shouldBuild) {
   Write-Host 'Building the Windows preview because it is missing or stale...'
   Push-Location $repoRoot
   try {
-    & $flutter pub get
-    if ($LASTEXITCODE -ne 0) {
-      throw "flutter pub get failed with exit code $LASTEXITCODE"
-    }
+    & (Join-Path $repoRoot 'tool\ensure_flutter_dependencies.ps1') `
+      -FlutterPath $flutter
     & $flutter build windows --debug --no-pub
     if ($LASTEXITCODE -ne 0) {
       throw "flutter build windows --debug failed with exit code $LASTEXITCODE"

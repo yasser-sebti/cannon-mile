@@ -44,10 +44,12 @@ bool FlutterWindow::OnCreate() {
           std::array<double, 4> drop_volumes{};
           std::array<double, 3> explosion_volumes{};
           std::array<double, 3> metal_hit_volumes{};
-          volumes.fill(0.15925);
-          drop_volumes.fill(0.21);
-          explosion_volumes.fill(0.01715);
-          metal_hit_volumes.fill(0.042);
+          double laser_start_volume = 0.34;
+          double laser_idle_volume = 0.24;
+          volumes.fill(0.207025);
+          drop_volumes.fill(0.273);
+          explosion_volumes.fill(0.022295);
+          metal_hit_volumes.fill(0.0546);
           if (const auto* arguments =
                   std::get_if<flutter::EncodableMap>(call.arguments())) {
             const auto gains =
@@ -109,12 +111,29 @@ bool FlutterWindow::OnCreate() {
                 }
               }
             }
+            const auto laser_start_gain =
+                arguments->find(flutter::EncodableValue("laserStartVolume"));
+            if (laser_start_gain != arguments->end()) {
+              if (const auto* value =
+                      std::get_if<double>(&laser_start_gain->second)) {
+                laser_start_volume = *value;
+              }
+            }
+            const auto laser_idle_gain =
+                arguments->find(flutter::EncodableValue("laserIdleVolume"));
+            if (laser_idle_gain != arguments->end()) {
+              if (const auto* value =
+                      std::get_if<double>(&laser_idle_gain->second)) {
+                laser_idle_volume = *value;
+              }
+            }
           }
           result->Success(flutter::EncodableValue(
               fire_audio_player_ &&
               fire_audio_player_->LoadPackagedSounds(
                   volumes, drop_volumes, explosion_volumes,
-                  metal_hit_volumes)));
+                  metal_hit_volumes, laser_start_volume,
+                  laser_idle_volume)));
           return;
         }
         if (call.method_name() == "play") {
@@ -194,6 +213,18 @@ bool FlutterWindow::OnCreate() {
               fire_audio_player_->QueueMetalHit(
                   static_cast<size_t>(sound_index), playback_rate);
           result->Success(flutter::EncodableValue(played));
+          return;
+        }
+        if (call.method_name() == "startLaser") {
+          const bool played = fire_audio_player_ &&
+                              fire_audio_player_->QueueLaserStart();
+          result->Success(flutter::EncodableValue(played));
+          return;
+        }
+        if (call.method_name() == "stopLaser") {
+          const bool stopped = fire_audio_player_ &&
+                               fire_audio_player_->QueueLaserStop();
+          result->Success(flutter::EncodableValue(stopped));
           return;
         }
         result->NotImplemented();

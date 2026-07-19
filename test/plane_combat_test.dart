@@ -14,8 +14,12 @@ import 'package:cannon_mile/game/components/enemies/enemy_plane_spawn.dart';
 import 'package:cannon_mile/game/components/enemies/plane_collision_mask_cache.dart';
 import 'package:cannon_mile/game/components/tank/tank_bullet_component.dart';
 import 'package:cannon_mile/game/components/tank/tank_bullet_level.dart';
+import 'package:cannon_mile/game/components/tank/tank_bullet_shell_component.dart';
 import 'package:cannon_mile/game/components/tank/tank_component.dart';
 import 'package:cannon_mile/game/components/tank/tank_fire_sound_player.dart';
+import 'package:cannon_mile/game/components/tank/tank_movement_mode.dart';
+import 'package:cannon_mile/game/components/tank/tank_laser_component.dart';
+import 'package:cannon_mile/game/components/tank/tank_weapon_mode.dart';
 import 'package:flame/game.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -66,6 +70,8 @@ EnemyPlaneComponent _activatePlane(
   CannonMileGame game, {
   double speed = 280,
   bool movesRight = true,
+  double x = 960,
+  double y = 300,
 }) {
   final plane = game.world.children.whereType<EnemyPlaneComponent>().firstWhere(
     (candidate) => !candidate.isActive,
@@ -74,7 +80,7 @@ EnemyPlaneComponent _activatePlane(
     movesRight: movesRight,
     speed: speed,
     altitudeLane: 0,
-    position: Vector2(960, 300),
+    position: Vector2(x, y),
   );
   return plane;
 }
@@ -300,6 +306,14 @@ void main() {
         .toList(growable: false);
     expect(burstParticles.length, inInclusiveRange(7, 9));
     expect(lingeringParticles.length, inInclusiveRange(7, 9));
+    expect(burstParticles.first.inheritedWorldVelocity, 0);
+    expect(
+      lingeringParticles.first.inheritedWorldVelocity,
+      -TankBulletShellComponent.continuousGroundDriftSpeed,
+    );
+    game.setMovementMode(TankMovementMode.bossFight);
+    expect(lingeringParticles.first.inheritedWorldVelocity, 0);
+    game.setMovementMode(TankMovementMode.continuous);
     const allSmokeArtwork = {0, 1, 2, 3, 4, 5, 6};
     expect(
       burstParticles.map((particle) => particle.artworkIndex).toSet(),
@@ -617,6 +631,76 @@ void main() {
     },
   );
 
+  testWidgets('one bullet destroys a plane missile with a small explosion', (
+    tester,
+  ) async {
+    final game = await _loadCombatGame(tester);
+    final missile = game.world.children
+        .whereType<EnemyPlaneMissileComponent>()
+        .firstWhere((candidate) => !candidate.isActive);
+    missile.activate(x: 960, y: 300, velocityX: 0, velocityY: 100);
+    final bullet = _activateBulletAtCollisionCenter(
+      game,
+      level: TankBulletLevel.level1,
+      collisionCenter: Vector2(960, 400),
+      cannonAngle: 0,
+    );
+
+    expect(missile.maxHealth, 1);
+    expect(missile.currentHealth, 1);
+    game.update(0.1);
+
+    expect(bullet.isActive, isFalse);
+    expect(missile.currentHealth, 0);
+    expect(missile.isActive, isFalse);
+    expect(game.planeMissiles, isEmpty);
+    expect(game.planeMissilesDestroyed, 1);
+    expect(game.bulletHits, 1);
+    expect(game.groundHits, 0);
+    final sounds = game.fireSounds as SilentTankFireSoundPlayer;
+    expect(sounds.metalHitPlayCount, 1);
+    expect(game.planeExplosions, hasLength(1));
+    final explosion = game.planeExplosions.single;
+    expect(explosion.visualScale, PlaneExplosionComponent.missileVisualScale);
+    expect(PlaneExplosionComponent.missileVisualScale, 0.48);
+    expect(explosion.hasPrebakedGlow, isTrue);
+    expect(game.planeSmokeEffects, hasLength(1));
+    final smoke = game.planeSmokeEffects.single;
+    expect(smoke.visualScale, PlaneSmokeComponent.missileVisualScale);
+    expect(smoke.priority, lessThan(explosion.priority));
+    final smokeParticles = game.planeSmokeParticles.toList(growable: false);
+    expect(smokeParticles.length, inInclusiveRange(14, 18));
+    expect(game.lastPlaneSmokeParticleCount, smokeParticles.length);
+    expect(
+      smokeParticles
+          .where((particle) => particle.isLingering)
+          .every(
+            (particle) =>
+                particle.inheritedWorldVelocity ==
+                -TankBulletShellComponent.continuousGroundDriftSpeed,
+          ),
+      isTrue,
+    );
+    expect(
+      smokeParticles.every(
+        (particle) =>
+            particle.scale.x <=
+            PlaneSmokeParticleComponent.missileVisualScale * 1.15,
+      ),
+      isTrue,
+    );
+
+    explosion.update(PlaneExplosionComponent.duration);
+    expect(explosion.isActive, isFalse);
+    expect(game.world.availablePlaneExplosionCount, 12);
+
+    missile.activate(x: 960, y: 300, velocityX: 0, velocityY: 100);
+    expect(missile.currentHealth, 1);
+    expect(EnemyPlaneMissileComponent.gravity, 860);
+
+    await tester.binding.setSurfaceSize(null);
+  });
+
   testWidgets('destroyed planes queue an immediate traffic replacement', (
     tester,
   ) async {
@@ -640,6 +724,83 @@ void main() {
     final spawnedBeforeReplacement = game.world.planesSpawned;
     game.update(EnemyPlaneSpawnTuning.immediateReplacementDelay + 0.01);
     expect(game.world.planesSpawned, greaterThan(spawnedBeforeReplacement));
+
+    await tester.binding.setSurfaceSize(null);
+  });
+
+  testWidgets('charged laser pierces planes and missiles without shot audio', (
+    tester,
+  ) async {
+    final game = await _loadCombatGame(tester);
+    final firstPlane = _activatePlane(game, speed: 0.001, y: 300);
+    final secondPlane = _activatePlane(game, speed: 0.001, y: 500);
+    final missile = game.world.children
+        .whereType<EnemyPlaneMissileComponent>()
+        .firstWhere((candidate) => !candidate.isActive);
+    missile.activate(x: 960, y: 650, velocityX: 0, velocityY: 1);
+    final sounds = game.fireSounds as SilentTankFireSoundPlayer;
+
+    game.setWeaponMode(TankWeaponMode.laser);
+    game.world.tank.setPointerTarget(Vector2(960, 0));
+    game.setTriggerHeld(true);
+    game.update(0.10);
+
+    expect(game.isLaserDamageActive, isTrue);
+    expect(firstPlane.isActive, isFalse);
+    expect(secondPlane.isActive, isFalse);
+    expect(missile.isActive, isFalse);
+    expect(game.laserHits, 3);
+    expect(game.laserTargetsDestroyed, 3);
+    expect(game.laser!.lastFrameHitCount, 3);
+    expect(game.planesDestroyed, 2);
+    expect(game.planeMissilesDestroyed, 1);
+    expect(game.planeExplosions, hasLength(3));
+    expect(game.bulletHits, 0);
+    expect(sounds.metalHitPlayCount, 0);
+    expect(sounds.playCount, 0);
+
+    await tester.binding.setSurfaceSize(null);
+  });
+
+  testWidgets('laser glow alone does not damage the visible plane silhouette', (
+    tester,
+  ) async {
+    final game = await _loadCombatGame(tester);
+    final mask = game.collisionMaskCache.planeMask;
+    var leftBoundarySourceX = mask.width.toDouble();
+    for (var index = 0; index < mask.boundaryPointCount; index++) {
+      leftBoundarySourceX = math.min(
+        leftBoundarySourceX,
+        mask.boundaryXs[index],
+      );
+    }
+    final plane = _activatePlane(game, speed: 0.001);
+    final leftBoundaryOffset =
+        (leftBoundarySourceX / mask.width - 0.5) * plane.size.x;
+    const visualGapFromCenter = 30.0;
+    plane.activate(
+      movesRight: true,
+      speed: 0.001,
+      altitudeLane: 0,
+      position: Vector2(960 + visualGapFromCenter - leftBoundaryOffset, 300),
+    );
+
+    game.setWeaponMode(TankWeaponMode.laser);
+    game.world.tank.setPointerTarget(Vector2(960, 0));
+    game.setTriggerHeld(true);
+    game.update(TankLaserComponent.powerUpDuration + 0.01);
+
+    expect(game.laserPower, 1);
+    expect(
+      visualGapFromCenter,
+      greaterThan(TankLaserComponent.maximumCoreWidth / 2),
+    );
+    expect(
+      visualGapFromCenter,
+      lessThan(TankLaserComponent.maximumGlowWidth / 2),
+    );
+    expect(plane.isActive, isTrue);
+    expect(game.laserTargetsDestroyed, 0);
 
     await tester.binding.setSurfaceSize(null);
   });

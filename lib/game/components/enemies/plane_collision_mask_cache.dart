@@ -48,12 +48,18 @@ class SpriteAlphaMask {
     required this.height,
     required this.alphaThreshold,
     required this._solidPixels,
+    required this.boundaryXs,
+    required this.boundaryYs,
   });
 
   final int width;
   final int height;
   final int alphaThreshold;
   final Uint8List _solidPixels;
+  final Float32List boundaryXs;
+  final Float32List boundaryYs;
+
+  int get boundaryPointCount => boundaryXs.length;
 
   static Future<SpriteAlphaMask> fromImage(
     ui.Image image, {
@@ -73,11 +79,37 @@ class SpriteAlphaMask {
           ? 1
           : 0;
     }
+    bool isSolidPixel(int x, int y) {
+      return x >= 0 &&
+          x < image.width &&
+          y >= 0 &&
+          y < image.height &&
+          solidPixels[y * image.width + x] != 0;
+    }
+
+    final boundaryXValues = <double>[];
+    final boundaryYValues = <double>[];
+    for (var y = 0; y < image.height; y++) {
+      for (var x = 0; x < image.width; x++) {
+        if (!isSolidPixel(x, y)) {
+          continue;
+        }
+        if (!isSolidPixel(x - 1, y) ||
+            !isSolidPixel(x + 1, y) ||
+            !isSolidPixel(x, y - 1) ||
+            !isSolidPixel(x, y + 1)) {
+          boundaryXValues.add(x + 0.5);
+          boundaryYValues.add(y + 0.5);
+        }
+      }
+    }
     return SpriteAlphaMask._(
       width: image.width,
       height: image.height,
       alphaThreshold: alphaThreshold,
       solidPixels: solidPixels,
+      boundaryXs: Float32List.fromList(boundaryXValues),
+      boundaryYs: Float32List.fromList(boundaryYValues),
     );
   }
 
