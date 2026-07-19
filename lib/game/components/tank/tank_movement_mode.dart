@@ -1,0 +1,1 @@
+enum TankMovementMode { continuous, bossFight }

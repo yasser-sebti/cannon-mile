@@ -1,25 +1,10 @@
 @echo off
 setlocal EnableExtensions
-title Cannon Mile Dev Console
+title Cannon Mile Dev Console - STARTING
 color 0B
-mode con: cols=96 lines=32
+mode con: cols=104 lines=34
 cls
 pushd "%~dp0"
-
-set "CURRENT_DIR=%CD%"
-set "CURRENT_DIR_FORWARD=%CURRENT_DIR:\=/%"
-set "CLEAN_BUILD="
-if exist "build\windows\x64\CMakeCache.txt" (
-  findstr /I /C:"For build in directory: %CURRENT_DIR_FORWARD%/build/windows/x64" "build\windows\x64\CMakeCache.txt" >nul
-  if errorlevel 1 set "CLEAN_BUILD=1"
-)
-
-if defined CLEAN_BUILD (
-  echo.
-  echo  [INFO] Path mismatch detected in CMake cache.
-  echo         Cleaning the stale build directory...
-  rmdir /s /q "build"
-)
 
 set "FLUTTER="
 if defined FLUTTER_ROOT (
@@ -40,6 +25,7 @@ if not defined FLUTTER (
 
 :flutter_found
 if not exist "%FLUTTER%" (
+  title Cannon Mile Dev Console - FLUTTER NOT FOUND
   echo [ERROR] Flutter SDK not found.
   echo.
   echo Checked FLUTTER_ROOT, USERPROFILE\develop\flutter, the local SDK path,
@@ -50,9 +36,9 @@ if not exist "%FLUTTER%" (
 )
 
 echo.
-echo  ================================================================
-echo    CANNON MILE DEV CONSOLE
-echo  ================================================================
+echo  ========================================================================
+echo    CANNON MILE INTERACTIVE DEV CONSOLE
+echo  ========================================================================
 echo.
 echo  Project:
 echo    %CD%
@@ -60,35 +46,40 @@ echo.
 echo  Flutter:
 echo    %FLUTTER%
 echo.
-echo  Dev shortcuts in this console:
-echo    r   hot reload
-echo    R   hot restart
-echo    h   Flutter help
-echo    q   quit
+echo  Keep this console focused when using Flutter shortcuts.
+echo    r         hot reload - press once, no Enter required
+echo    Shift+R   hot restart
+echo    h         Flutter help
+echo    q         quit
 echo.
 
-echo  Syncing populated asset folders...
-powershell -NoProfile -ExecutionPolicy Bypass -File "tool\sync_asset_folders.ps1"
-if errorlevel 1 goto :failure
+powershell -NoProfile -ExecutionPolicy Bypass -File "tool\run_flutter_dev.ps1" -FlutterPath "%FLUTTER%"
+set "DEV_EXIT=%ERRORLEVEL%"
 
-echo  Preparing Flutter packages...
-call "%FLUTTER%" pub get >nul
-if errorlevel 1 goto :failure
+if "%DEV_EXIT%"=="2" goto :already_running
+if not "%DEV_EXIT%"=="0" goto :failure
 
-echo  Starting Cannon Mile in Windows debug mode...
-call "%FLUTTER%" run -d windows --debug --no-pub
-if errorlevel 1 goto :failure
-
+title Cannon Mile Dev Console - STOPPED
 echo.
-echo  Cannon Mile dev run ended.
-pause
+echo  Cannon Mile dev session ended.
+powershell -NoProfile -Command "Start-Sleep -Seconds 3" >nul
+popd
+exit /b 0
+
+:already_running
+title Cannon Mile Dev Console - DUPLICATE BLOCKED
+echo.
+echo [INFO] Another Cannon Mile dev console already owns hot reload.
+echo        Use the original ACTIVE console for r, Shift+R, h, and q.
+powershell -NoProfile -Command "Start-Sleep -Seconds 6" >nul
 popd
 exit /b 0
 
 :failure
+title Cannon Mile Dev Console - FAILED
 echo.
-echo [ERROR] The development launch failed.
-echo Try flutter clean, then run this file again.
+echo [ERROR] The interactive development session failed with exit code %DEV_EXIT%.
+echo Try flutter clean if the detailed error above reports a build failure.
 pause
 popd
-exit /b 1
+exit /b %DEV_EXIT%

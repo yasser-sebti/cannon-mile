@@ -21,9 +21,89 @@ responsive combat encounters will build into longer runs featuring stronger
 enemy combinations, temporary upgrades, weapon choices, major threats, and
 increasing pressure.
 
-Cannon Mile is currently in its first movement and animation prototype stage.
-The Windows build contains a layered tank that follows the mouse horizontally,
-accelerates according to cursor distance, and aims its cannon through the upper
-180-degree arc. Its filtered artwork uses a smooth two-image track morph plus
-speed-responsive wheel and chassis motion. Firing, enemies, encounters,
-progression, audio, and the complete game loop remain future milestones.
+Cannon Mile is currently in its first movement, animation, and visual-fire
+prototype stage.
+The Windows build contains a layered tank with two testing modes. Both follow
+the mouse horizontally, slow with a finite heavy arrival, and respect safe
+screen margins. Maximum edge boost eases continuously through the outer side
+band instead of switching on when the pointer crosses the tank boundary. A
+timestamped fast swipe inside that band can request a temporary moderate dodge
+boost without turning ordinary slow edge aiming into turbo movement.
+Continuous keeps restrained persistent track, wheel, and
+chassis motion active to simulate forward travel, while Boss Fight can settle
+completely still. Both modes aim through the upper 180-degree arc while the
+cannon mount travels along a shallow upside-down U. Holding the primary mouse
+button now previews a fast four-pose muzzle flash with six rapid-fire settings.
+The flash uses 16 pre-baked animation composites with a lighter Gaussian halo
+and three tapered additive speed-lens streaks. Runtime firing draws one cached
+image without a blur filter, blend layer, or per-shot effect allocation.
+The complete tank hierarchy renders at 70% authored size, with its muzzle flash
+inheriting the same transform and detached bullets explicitly matching it.
+Continuous track animation uses a stronger forward idle cadence and continues
+during slow backing,
+then reverses at a faster cadence during fast backing without changing the
+round-wheel tuning. Its maximum-speed cadence is strongly capped independently
+of the round wheels. Each shot randomly mirrors its muzzle flash and plays the
+gunfire sound matching its bullet level at individually balanced volume, with a
+subtle randomized `0.95x` to `1.05x` playback speed. Gunfire samples and a bounded
+voice pool are prepared during loading, while Windows queues playback on a
+dedicated worker so audio recycling cannot stall gameplay animation. Bullet
+artwork has six placeholder levels,
+while a separate five-level
+spread upgrade fires substantially wider symmetric patterns from level two
+onward at one fixed projectile speed. A six-level tank-speed test control ranges
+from 600 to the reduced 720-pixel-per-second maximum. Edge turbo remains locked
+until the tank is already moving at a safe fraction of its selected cap.
+Five supplied bullet sprites retain their source canvases and glow padding, but
+higher levels render at restrained scales, including small reductions for
+levels two through four; the sixth artwork level temporarily
+reuses the strongest sprite, and the first four receive progressively lighter
+RGB-only brightness reduction baked during loading. Every shot ejects one tiny
+level-matched casing from the cannon's local-right side. The casing inherits
+tank motion, rotates under gravity, makes two restrained bounces against the
+exact wheel-ground edge, skids, and fades into a 24-object inactive pool. While
+Continuous travel is active, casings visibly eject to the right first. The
+opposing map wind fades in near the ground, then strengthens smoothly across
+the two bounces toward full ground drift while retaining normal fade timing.
+Bullets now use alpha-aware swept collision against scout planes, resolving the
+first visible projectile-core pixel against the mirrored aircraft silhouette.
+Every plane has six health, bullet levels deal one through six damage, and
+nonlethal hits receive a visible damage-scaled red overlay that fades over
+100 ms. Each hit plays a tiny pre-glowed ten-frame downward impact over 70 ms
+and emits 12–16 orange physics particles. One of three non-repeating metal-hit
+sounds plays at 4.2% volume with randomized `0.90x`–`1.10x` speed. Twenty-four
+pre-created non-interrupting voices spill saturated variations into another
+available clip, preserving rapid hits without replay cutoffs, delay, or mute.
+Ground explosions use the same overlap strategy. Lethal hits replace the plane with a
+pooled six-frame explosion with pre-baked source-color glow. The burst
+smoothly changes size and fades over 228 ms; immediate six-frame smoke animates
+behind it while 14–18 smoke chunks split into an immediate burst and a delayed,
+slow-rising inverted-triangle plume that lingers before smoothly shrinking away.
+The first ground contact of each casing requests one of four randomized impact
+sounds without immediate repetition. A shared cooldown suppresses dense sound
+buildup. A toggleable scout-plane spawner now produces continuous randomized
+two-to-four-plane bursts from either side, using safe upper-screen
+altitude lanes and uniformly randomized `280–700` speed. Predictive lane
+reservations keep same-direction planes at least 1.5 plane widths apart, while
+opposite directions receive small vertical offsets. Destroyed planes request a
+replacement after 60 ms. Active aircraft periodically release pooled triangle
+missiles that curve downward under gravity but deal no damage. Ground contact
+renders a ten-frame hit and delayed
+five-frame smoke above the tank;
+both share a randomized `0.30x`–`0.52x` authored-size scale with visibly
+separated consecutive rolls and drift with the
+simulated ground in Continuous mode. One of three non-repeating impact sounds
+plays at 1.715% volume on contact through non-interrupting pooled voices. Twenty pooled planes, 96
+pooled bullets, 64 plane missiles, 32 ground hits, 40 ground-smoke animations,
+24 pooled casings, 12 impact effects, 12 explosions, 12 smoke animations, 256
+smoke chunks, and 256 hit particles avoid
+recurring gameplay allocation.
+
+The branded loading sequence reports real image, audio, visual-cache, pool, and
+renderer warm-up progress. Track morphs, projectile brightness, muzzle
+composites, collision masks, glowing hit frames, large dual-radius plane and
+ground-hit explosion glows, smoke,
+red overlays, and particles are prepared before two
+covered render frames exercise the resulting runtime paths. Missile damage,
+full enemy attacks, encounters, player health, scoring, progression, a complete
+audio system, and the full game loop remain future milestones.

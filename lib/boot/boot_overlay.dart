@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 
 import '../app/app_config.dart';
 import '../game/cannon_mile_game.dart';
+import '../game/game_loading_progress.dart';
 import 'boot_controller.dart';
 
 class BootTimings {
@@ -43,6 +44,7 @@ class BootOverlay extends StatefulWidget {
   const BootOverlay({
     required this.game,
     required this.onFinished,
+    this.onLoadingStarted,
     this.tasks,
     this.timings = BootTimings.production,
     super.key,
@@ -50,6 +52,7 @@ class BootOverlay extends StatefulWidget {
 
   final CannonMileGame game;
   final VoidCallback onFinished;
+  final VoidCallback? onLoadingStarted;
   final List<BootTask>? tasks;
   final BootTimings timings;
 
@@ -71,16 +74,18 @@ class _BootOverlayState extends State<BootOverlay>
   late BootProgress _progress;
   bool _loadingStarted = false;
 
-  int get _taskCount => widget.tasks?.length ?? 3;
+  int get _taskCount =>
+      widget.tasks?.length ?? widget.game.loadingProgress.value.total;
 
   @override
   void initState() {
     super.initState();
-    _progress = BootProgress(
-      completed: 0,
-      total: _taskCount,
-      label: 'Preparing',
-    );
+    _progress = widget.tasks == null
+        ? _bootProgressForGame(widget.game.loadingProgress.value)
+        : BootProgress(completed: 0, total: _taskCount, label: 'Preparing');
+    if (widget.tasks == null) {
+      widget.game.loadingProgress.addListener(_handleGameProgress);
+    }
     _fadeController = AnimationController(
       vsync: this,
       duration: widget.timings.fadeOut,
@@ -102,17 +107,26 @@ class _BootOverlayState extends State<BootOverlay>
     setState(() {
       _loadingStarted = true;
     });
+    widget.onLoadingStarted?.call();
     await WidgetsBinding.instance.endOfFrame;
     await _delay(widget.timings.progressSettle);
     if (!mounted) {
       return;
     }
 
-    final controller = BootController(
-      tasks: widget.tasks ?? _defaultTasks(),
-      onProgress: _handleProgress,
-    );
-    await controller.run();
+    if (widget.tasks == null) {
+      await precacheImage(const AssetImage(AppConfig.brandingAsset), context);
+      await widget.game.initialized;
+      await WidgetsBinding.instance.endOfFrame;
+    } else {
+      final controller = BootController(
+        tasks: widget.tasks!,
+        onProgress: _handleProgress,
+      );
+      await controller.run();
+      await widget.game.initialized;
+      await WidgetsBinding.instance.endOfFrame;
+    }
     await _delay(widget.timings.completedHold);
     if (!mounted) {
       return;
@@ -131,19 +145,16 @@ class _BootOverlayState extends State<BootOverlay>
     return Future<void>.delayed(duration);
   }
 
-  List<BootTask> _defaultTasks() {
-    return [
-      BootTask(
-        label: 'Loading branding',
-        run: () =>
-            precacheImage(const AssetImage(AppConfig.brandingAsset), context),
-      ),
-      BootTask(label: 'Initializing game', run: () => widget.game.initialized),
-      BootTask(
-        label: 'Preparing interface',
-        run: () => WidgetsBinding.instance.endOfFrame,
-      ),
-    ];
+  void _handleGameProgress() {
+    _handleProgress(_bootProgressForGame(widget.game.loadingProgress.value));
+  }
+
+  BootProgress _bootProgressForGame(GameLoadingProgress progress) {
+    return BootProgress(
+      completed: progress.completed,
+      total: progress.total,
+      label: progress.label,
+    );
   }
 
   void _handleProgress(BootProgress progress) {
@@ -156,6 +167,9 @@ class _BootOverlayState extends State<BootOverlay>
 
   @override
   void dispose() {
+    if (widget.tasks == null) {
+      widget.game.loadingProgress.removeListener(_handleGameProgress);
+    }
     _fadeController.dispose();
     super.dispose();
   }
@@ -296,54 +310,59 @@ class BootProgressBar extends StatelessWidget {
       available: barWidth * 0.09,
     );
 
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        ClipRRect(
-          borderRadius: BorderRadius.circular(999),
-          child: SizedBox(
-            width: barWidth,
-            height: barHeight,
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                color: AppConfig.primaryTextColor.withValues(alpha: 0.16),
-                border: Border.all(
-                  color: AppConfig.primaryTextColor.withValues(alpha: 0.22),
+    return TweenAnimationBuilder<double>(
+      tween: Tween<double>(begin: 0, end: fraction),
+      duration: const Duration(milliseconds: 220),
+      curve: Curves.easeOutCubic,
+      builder: (context, displayedFraction, child) => Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          ClipRRect(
+            borderRadius: BorderRadius.circular(999),
+            child: SizedBox(
+              width: barWidth,
+              height: barHeight,
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  color: AppConfig.primaryTextColor.withValues(alpha: 0.16),
+                  border: Border.all(
+                    color: AppConfig.primaryTextColor.withValues(alpha: 0.22),
+                  ),
                 ),
-              ),
-              child: Align(
-                alignment: Alignment.centerLeft,
-                child: FractionallySizedBox(
-                  key: const Key('boot_progress_fill'),
-                  widthFactor: fraction,
-                  heightFactor: 1,
-                  child: const ColoredBox(color: AppConfig.progressColor),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: FractionallySizedBox(
+                    key: const Key('boot_progress_fill'),
+                    widthFactor: displayedFraction,
+                    heightFactor: 1,
+                    child: const ColoredBox(color: AppConfig.progressColor),
+                  ),
                 ),
               ),
             ),
           ),
-        ),
-        SizedBox(height: barHeight * 1.15),
-        Text(
-          '${(fraction * 100).round()}%',
-          key: const Key('boot_progress_percent'),
-          style: TextStyle(
-            color: AppConfig.primaryTextColor.withValues(alpha: 0.72),
-            fontSize: percentSize,
-            fontWeight: FontWeight.w800,
+          SizedBox(height: barHeight * 1.15),
+          Text(
+            '${(displayedFraction * 100).round()}%',
+            key: const Key('boot_progress_percent'),
+            style: TextStyle(
+              color: AppConfig.primaryTextColor.withValues(alpha: 0.72),
+              fontSize: percentSize,
+              fontWeight: FontWeight.w800,
+            ),
           ),
-        ),
-        SizedBox(height: barHeight * 0.45),
-        Text(
-          progress.label,
-          key: const Key('boot_progress_label'),
-          style: TextStyle(
-            color: AppConfig.primaryTextColor.withValues(alpha: 0.56),
-            fontSize: labelSize,
-            fontWeight: FontWeight.w400,
+          SizedBox(height: barHeight * 0.45),
+          Text(
+            progress.label,
+            key: const Key('boot_progress_label'),
+            style: TextStyle(
+              color: AppConfig.primaryTextColor.withValues(alpha: 0.56),
+              fontSize: labelSize,
+              fontWeight: FontWeight.w400,
+            ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 }

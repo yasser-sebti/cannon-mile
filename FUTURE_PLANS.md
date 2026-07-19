@@ -5,8 +5,9 @@ what should be built next, the intended order of work, and the conditions that
 must be met before moving to the next milestone.
 
 The roadmap begins from the current repository state: a tested Flutter and
-Flame foundation with a Windows mouse-controlled tank movement and animation
-prototype inside `CannonMileWorld`.
+Flame foundation with a Windows mouse-controlled tank movement, animation,
+visual muzzle-fire, and directional projectile prototype inside
+`CannonMileWorld`.
 
 For the current code structure, see [README.md](README.md).
 
@@ -72,6 +73,7 @@ The current project provides:
 - Responsive `1920 x 1080` virtual-stage calculations.
 - Ultrawide, taller-display, and safe-area support.
 - Animated Orange Hat Boy loading presentation.
+- Real image, audio, component-pool, and two-frame renderer warm-up progress.
 - Ordered, timed, fail-soft boot tasks.
 - Application lifecycle pause and resume.
 - A reusable raised-button interaction foundation.
@@ -79,8 +81,59 @@ The current project provides:
 - Desktop resolution preview launchers.
 - Unit and widget tests for the foundation.
 - A first layered tank skin, horizontal mouse following, upper-arc cannon aim,
-  high-quality filtered rendering, heavy responsive acceleration, an eased
-  two-image track morph, and speed-responsive wheel and chassis animation.
+  an arched cannon mount, safe viewport-edge travel with a continuously eased
+  outer-band boost plus a timestamped moderate swipe-dodge override,
+  high-quality filtered
+  rendering, switchable Continuous/Boss testing modes, finite heavy arrival,
+  persistent directional track-frame interpolation across four supplied poses,
+  a uniformly scaled 70% tank/effect/projectile presentation, speed-responsive
+  wheel and chassis animation, stronger Continuous track-idle cadence, a
+  forward Continuous-idle/slow-reverse track cadence with a fast-reverse
+  threshold and boost plus a stronger maximum-speed track cap, a
+  held-primary-mouse four-pose muzzle flash with randomized horizontal mirroring
+  plus 16 pre-baked light-Gaussian composites, three tapered speed-lens streaks,
+  and six deterministic
+  test rates, and six placeholder
+  bullet-artwork levels using five supplied sprites. Six tank-speed caps span
+  600 through the reduced 720 maximum, with velocity-gated edge turbo.
+  Projectile speed is fixed, spread
+  has five widened symmetric one-to-five shot levels, and each shot uses the
+  gunfire sound matching its bullet level at balanced 10.35125%–20.7025% volume with randomized
+  `0.95x` to `1.05x` playback speed. Windows routes these sounds through a
+  pre-attenuated, fixed runner-native voice pool driven by a non-blocking audio
+  worker, while other targets retain a bounded preloaded pool. Higher artwork levels use restrained render scales
+  and the first four levels receive progressively lighter RGB-only brightness
+  reduction. A seeded-testable scout-plane spawner creates continuous randomized
+  two-to-four plane waves, directions, `280–700` speeds, fast gaps, and safe altitude lanes.
+  Predictive 1.5-width spacing prevents same-direction overlap. Twenty pooled
+  planes, 96 pooled bullets, and 24 level-matched casings remove recurring spawn
+  allocation. Each shot ejects one casing with cannon-relative motion, gravity,
+  rotation, two exact ground-edge bounces, skid, and fade-out reuse. Casings
+  eject right before the opposing Continuous-travel wind fades in near the
+  ground and strengthens smoothly across each bounce. Player bullets now use
+  alpha-aware swept core collision against six-health planes, with
+  level-one-through-six damage, a cached 48–65% pure-red 100 ms overlay fade,
+  a tiny pre-glowed 70 ms downward impact animation, and 12–16 pooled orange
+  physics particles per contact. Three non-repeating metal-hit clips play at
+  4.2% volume with randomized `0.90x`–`1.10x` speed through 24 pre-created,
+  non-interrupting voices. Saturated metal-hit and ground-explosion variations
+  spill into another available clip instead of restarting, delaying, or muting.
+  Transparent aircraft corners do not register
+  hits, and mirrored sprites resolve contact against the same source mask.
+  Destroyed planes transition into pooled six-frame size-eased explosions with
+  pre-baked color glow, accompanied immediately by animated smoke and two
+  pooled physics-smoke profiles: fast burst chunks plus delayed, slow-rising
+  lingering chunks arranged as an inverted-triangle upward plume. Destroyed
+  aircraft request a 60 ms replacement. Active aircraft drop pooled visual-only
+  triangle missiles with curved gravity physics. Ground contact uses ten hit
+  frames and five
+  delayed smoke frames above the tank, with a shared randomized
+  `0.30x`–`0.52x` scale with visibly separated consecutive rolls,
+  Continuous-mode ground drift, pre-baked dual-radius outer glow, and randomized
+  non-repeating 1.715%-volume bomb impact audio. Eight voices per clip preserve
+  up to 24 overlapping tails and spill across available variations instead of
+  resetting an active sound. First casing-ground contacts use four randomized non-repeating
+  sounds behind a shared cooldown and bounded voice pool.
 
 This milestone should remain stable while gameplay is developed. New features
 must not make optional gameplay content a requirement for reaching the first
@@ -97,13 +150,15 @@ answers only the questions needed for the first playable slice.
 
 - Define the player's primary objective.
 - Decide whether the route scrolls automatically or responds to player speed.
-- The current prototype locks the vehicle to horizontal ground movement.
+- The current prototype compares persistent continuous-travel animation with a
+  fully stopping boss mode; both use horizontal mouse-following movement.
 - Select the first input model:
   - twin-stick touch controls;
   - drag-to-move and drag-to-aim;
   - movement control with automatic targeting;
   - Windows currently uses direct mouse hover for movement and aiming.
-- Define firing behavior, reload behavior, and projectile lifetime.
+- Define authoritative firing and reload behavior beyond the current basic
+  projectile-to-plane damage prototype.
 - Define player health, failure, and restart rules.
 - Define the first enemy's movement and attack behavior.
 - Define a short encounter with a measurable win condition.
@@ -306,7 +361,8 @@ composition are approved.
 
 ### Audio
 
-- Add an audio manager only when sound assets are ready.
+- Expand the current native-Windows/pooled-other-platform gunfire playback into
+  a complete audio manager only as more sound assets become ready.
 - Separate music, interface sounds, weapons, impacts, and ambience.
 - Provide independent music and sound-effect volume controls.
 - Handle lifecycle pause, interruption, and resume.

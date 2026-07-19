@@ -10,6 +10,7 @@ environment:
 dependencies:
   display_mode: ^0.0.2
   flame: ^1.37.0
+  flame_audio: ^2.12.1
   flutter:
     sdk: flutter
 
@@ -23,4 +24,7 @@ flutter:
     - assets/branding/orange_hat_boy_logo.webp
     # BEGIN GENERATED GAME ASSETS
     - assets/tank skins/default-skin/
+    - assets/effects/
+    - assets/enemy/planes/
+    - assets/sounds/
     # END GENERATED GAME ASSETS
