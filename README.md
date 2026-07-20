@@ -14,11 +14,17 @@ while Boss Fight can settle completely still. A seventh test control switches
 between normal projectiles and an unlimited ultimate laser. Holding fire in
 Laser mode instantly snaps a white/yellow/orange beam outward from the exact
 muzzle with no fade-in and overdraws it beyond the screen with no visible
-endpoint. A flattened animated half-ellipse made from the same beam layers
-rounds the origin instead of leaving a clipped edge. The cannon follows through
-a slightly faster but deliberately heavy angular spring while tank movement
-remains unchanged. Sixteen boot-baked beam states provide the breathing Gaussian glow,
-fast shake, and moving shine without runtime blur. Two pooled additive particle
+endpoint. A fully rounded loading-bar-style stroke made from the same beam
+layers and matching outer glow begins exactly at the cannon head instead of
+leaving a clipped edge. Its flat-top join and fully padded rounded end render as
+one uninterrupted line. Guard pixels around both filtered cache slices prevent
+the translucent glow from sampling a transparent texture boundary. Runtime now
+draws the long body and rounded cannon endpoint as one cached nine-slice image,
+so no compositing handoff can form a seam. The cannon uses a moderately faster
+version of the original heavy angular spring throughout Laser mode while tank
+movement remains unchanged. Sixteen boot-baked beam states provide the breathing Gaussian glow,
+fast shake, and moving shine without runtime blur. The shine remains inside the
+straight section so it cannot flash across the rounded cannon endpoint. Two pooled additive particle
 styles stay rigidly attached to the beam while racing from its base toward the
 screen boundary. At 35%
 power, the bright core pierces every intersected plane and missile and reuses

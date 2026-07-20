@@ -1814,22 +1814,40 @@ void main() {
 
     expect(game.weaponMode, TankWeaponMode.bullets);
     expect(laser.cachedFrameCount, TankLaserVisualCache.frameCount);
-    expect(laser.cachedOriginCapFrameCount, TankLaserVisualCache.frameCount);
+    expect(laser.cachedOriginStrokeFrameCount, TankLaserVisualCache.frameCount);
+    expect(
+      laser.visualCache.beamFrames.first.srcSize.x,
+      laser.visualCache.originStrokeFrames.first.srcSize.x,
+    );
+    expect(
+      laser.visualCache.beamFrames.first.srcPosition.y,
+      TankLaserVisualCache.textureGuard,
+    );
+    expect(
+      laser.visualCache.originStrokeFrames.first.srcPosition.y,
+      TankLaserVisualCache.textureGuard,
+    );
+    expect(
+      laser.visualCache.beamFrames.first.image.height,
+      TankLaserVisualCache.stripHeight + TankLaserVisualCache.textureGuard * 2,
+    );
+    expect(
+      TankLaserVisualCache.originStrokeImageHeight -
+          TankLaserVisualCache.originStrokeShapeBottom,
+      greaterThanOrEqualTo(TankLaserVisualCache.originGlowBlurSigma * 5),
+    );
     expect(laser.hasPrebakedGlow, isTrue);
     expect(laser.usesRuntimeBlur, isFalse);
+    expect(laser.usesSingleNinePatchBeam, isTrue);
     expect(laser.priority, 15);
     expect(laser.isVisible, isFalse);
 
     game.setWeaponMode(TankWeaponMode.laser);
     tank.setPointerTarget(Vector2(1900, 120));
-    final targetAngleBeforeStep = cannonAngleForTarget(
-      horizontalOffset: 1900 - tank.position.x,
-      verticalOffset: 120 - (tank.position.y - TankComponent.tankHeight),
-      previousAngle: tank.cannonAngle,
-    );
+    final initialLaserAngle = tank.cannonAngle;
     tank.update(0.10);
-    expect(tank.cannonAngle, greaterThan(0));
-    expect(tank.cannonAngle, lessThan(targetAngleBeforeStep));
+    expect(tank.cannonAngle, greaterThan(initialLaserAngle));
+    expect(tank.cannonAngle, lessThan(tank.laserTargetAngle));
     expect(tank.position.x, isNot(initialTankX));
 
     final shotsBefore = tank.shotsFired;
@@ -1840,6 +1858,11 @@ void main() {
     expect(sounds.laserStartCount, 1);
     expect(sounds.isLaserIdlePlaying, isTrue);
     expect(tank.muzzleParticlesEmitted, particlesBefore);
+    tank.setPointerTarget(Vector2(0, 120));
+    tank.update(0.10);
+    expect(tank.cannonAngle, greaterThan(tank.laserTargetAngle));
+    tank.update(0.02);
+    expect(tank.laserAngularVelocity, lessThan(0));
     tank.update(0);
     expect(laser.power, 1);
     expect(laser.isDamageActive, isTrue);

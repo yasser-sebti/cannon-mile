@@ -8,22 +8,42 @@ import 'tank_track_morph_component.dart';
 class TankLaserVisualCache {
   TankLaserVisualCache({
     required this.beamFrames,
-    required this.originCapFrames,
+    required this.originStrokeFrames,
     required this.shineSprite,
   });
 
   static const int frameCount = 16;
   static const double imageWidth = 160;
+  static const double beamCacheImageWidth = 280;
   static const double stripHeight = 32;
-  static const double originCapHeight = 30;
+  static const double textureGuard = 8;
+  static const double originStrokeImageWidth = beamCacheImageWidth;
+  static const double originStrokeImageHeight = 192;
+  static const double originStrokeLength = 96;
+  static const double originGlowPadding = 96;
+  static const double originGlowBlurSigma = 18;
+  static const double originStrokeShapeBottom = originStrokeLength;
+  static const double originStrokeRawImageHeight =
+      originStrokeImageHeight + textureGuard * 2;
+  static const double originStrokeRawShapeBottom =
+      textureGuard + originStrokeShapeBottom;
+  static const double originStrokeRawBottomPadding =
+      originStrokeRawImageHeight - originStrokeRawShapeBottom;
+  static const double shineOriginClearance = 28;
+  static final ui.Rect beamNinePatchCenter = ui.Rect.fromLTWH(
+    1,
+    textureGuard + 16,
+    originStrokeImageWidth - 2,
+    1,
+  );
 
   final List<Sprite> beamFrames;
-  final List<Sprite> originCapFrames;
+  final List<Sprite> originStrokeFrames;
   final Sprite shineSprite;
 
   static Future<TankLaserVisualCache> bake() async {
     final frames = <Sprite>[];
-    final originCaps = <Sprite>[];
+    final originStrokes = <Sprite>[];
     for (var index = 0; index < frameCount; index++) {
       final phase = index / frameCount;
       final pulse = (math.sin(phase * math.pi * 2) + 1) / 2;
@@ -32,7 +52,7 @@ class TankLaserVisualCache {
       final orangeWidth = _lerp(76, 96, pulse);
       final recorder = ui.PictureRecorder();
       final canvas = ui.Canvas(recorder);
-      const centerX = imageWidth / 2;
+      const centerX = beamCacheImageWidth / 2;
       final fullHeight = stripHeight * 5;
       final top = -stripHeight * 2;
 
@@ -84,54 +104,76 @@ class TankLaserVisualCache {
 
       final picture = recorder.endRecording();
       final image = await picture.toImage(
-        imageWidth.ceil(),
-        stripHeight.ceil(),
+        beamCacheImageWidth.ceil(),
+        (stripHeight + textureGuard * 2).ceil(),
       );
       picture.dispose();
-      frames.add(Sprite(image));
-
-      // The beam begins with the lower half of a flattened ellipse. Its
-      // horizontal layer widths exactly match the rectangular beam above it,
-      // so every cached pulse state joins without a clipped-looking edge.
-      final capRecorder = ui.PictureRecorder();
-      final capCanvas = ui.Canvas(capRecorder);
-      capCanvas.drawOval(
-        ui.Rect.fromCenter(
-          center: const ui.Offset(centerX, 0),
-          width: orangeWidth,
-          height: orangeWidth * 0.55,
+      frames.add(
+        Sprite(
+          image,
+          srcPosition: Vector2(0, textureGuard),
+          srcSize: Vector2(beamCacheImageWidth, stripHeight),
         ),
+      );
+
+      // Continue the beam with one flat-top, rounded-bottom stroke. Its upper
+      // edge extends beyond the cache so neither color nor blur can create a
+      // second cap at the join. Large side/bottom padding lets the halo decay
+      // completely before the texture boundary.
+      final strokeRecorder = ui.PictureRecorder();
+      final strokeCanvas = ui.Canvas(strokeRecorder);
+      const originCenterX = originStrokeImageWidth / 2;
+      final orangeStroke = ui.RRect.fromRectAndCorners(
+        ui.Rect.fromLTWH(
+          originCenterX - orangeWidth / 2,
+          textureGuard - originGlowPadding,
+          orangeWidth,
+          originStrokeLength + originGlowPadding,
+        ),
+        bottomLeft: ui.Radius.circular(orangeWidth / 2),
+        bottomRight: ui.Radius.circular(orangeWidth / 2),
+      );
+      final energyStroke = ui.RRect.fromRectAndCorners(
+        ui.Rect.fromLTWH(
+          originCenterX - energyWidth / 2,
+          textureGuard - originGlowPadding,
+          energyWidth,
+          originStrokeLength + originGlowPadding,
+        ),
+        bottomLeft: ui.Radius.circular(energyWidth / 2),
+        bottomRight: ui.Radius.circular(energyWidth / 2),
+      );
+      final coreStroke = ui.RRect.fromRectAndCorners(
+        ui.Rect.fromLTWH(
+          originCenterX - coreWidth / 2,
+          textureGuard - originGlowPadding,
+          coreWidth,
+          originStrokeLength + originGlowPadding,
+        ),
+        bottomLeft: ui.Radius.circular(coreWidth / 2),
+        bottomRight: ui.Radius.circular(coreWidth / 2),
+      );
+      strokeCanvas.drawRRect(
+        orangeStroke,
         _bakePaint(
           color: const ui.Color(0xCCFF6A00),
-          blurSigma: 18,
+          blurSigma: originGlowBlurSigma,
           blendMode: ui.BlendMode.plus,
         ),
       );
-      capCanvas.drawOval(
-        ui.Rect.fromCenter(
-          center: const ui.Offset(centerX, 0),
-          width: orangeWidth,
-          height: orangeWidth * 0.50,
-        ),
+      strokeCanvas.drawRRect(
+        orangeStroke,
         _bakePaint(color: const ui.Color(0xFFFF7200)),
       );
-      capCanvas.drawOval(
-        ui.Rect.fromCenter(
-          center: const ui.Offset(centerX, 0),
-          width: energyWidth,
-          height: energyWidth * 0.55,
-        ),
+      strokeCanvas.drawRRect(
+        energyStroke,
         _bakePaint(
           color: const ui.Color(0xFFFFD21A),
           blendMode: ui.BlendMode.plus,
         ),
       );
-      capCanvas.drawOval(
-        ui.Rect.fromCenter(
-          center: const ui.Offset(centerX, 0),
-          width: coreWidth,
-          height: coreWidth * 0.60,
-        ),
+      strokeCanvas.drawRRect(
+        coreStroke,
         _bakePaint(
           color: ui.Color.lerp(
             const ui.Color(0xFFFFF5B8),
@@ -141,13 +183,19 @@ class TankLaserVisualCache {
           blendMode: ui.BlendMode.plus,
         ),
       );
-      final capPicture = capRecorder.endRecording();
-      final capImage = await capPicture.toImage(
-        imageWidth.ceil(),
-        originCapHeight.ceil(),
+      final strokePicture = strokeRecorder.endRecording();
+      final strokeImage = await strokePicture.toImage(
+        originStrokeImageWidth.ceil(),
+        originStrokeRawImageHeight.ceil(),
       );
-      capPicture.dispose();
-      originCaps.add(Sprite(capImage));
+      strokePicture.dispose();
+      originStrokes.add(
+        Sprite(
+          strokeImage,
+          srcPosition: Vector2(0, textureGuard),
+          srcSize: Vector2(originStrokeImageWidth, originStrokeImageHeight),
+        ),
+      );
     }
 
     final shineRecorder = ui.PictureRecorder();
@@ -171,7 +219,7 @@ class TankLaserVisualCache {
 
     return TankLaserVisualCache(
       beamFrames: List.unmodifiable(frames),
-      originCapFrames: List.unmodifiable(originCaps),
+      originStrokeFrames: List.unmodifiable(originStrokes),
       shineSprite: Sprite(shineImage),
     );
   }
@@ -197,7 +245,7 @@ class TankLaserVisualCache {
     for (final frame in beamFrames) {
       frame.image.dispose();
     }
-    for (final frame in originCapFrames) {
+    for (final frame in originStrokeFrames) {
       frame.image.dispose();
     }
     shineSprite.image.dispose();
@@ -208,7 +256,8 @@ class TankLaserComponent extends PositionComponent {
   TankLaserComponent({required this.visualCache})
     : assert(visualCache.beamFrames.length == TankLaserVisualCache.frameCount),
       assert(
-        visualCache.originCapFrames.length == TankLaserVisualCache.frameCount,
+        visualCache.originStrokeFrames.length ==
+            TankLaserVisualCache.frameCount,
       ),
       super(
         position: Vector2.all(parkingCoordinate),
@@ -243,10 +292,6 @@ class TankLaserComponent extends PositionComponent {
       ),
     growable: false,
   );
-  final Vector2 _beamRenderPosition = Vector2.zero();
-  final Vector2 _beamRenderSize = Vector2.zero();
-  final Vector2 _originCapPosition = Vector2.zero();
-  final Vector2 _originCapSize = Vector2.zero();
   final Vector2 _shinePosition = Vector2.zero();
   final Vector2 _shineSize = Vector2.zero();
   final Vector2 _currentOrigin = Vector2.all(parkingCoordinate);
@@ -281,8 +326,9 @@ class TankLaserComponent extends PositionComponent {
       !_warmupActive && _weaponEnabled && _power >= damagePowerThreshold;
   bool get usesRuntimeBlur => false;
   bool get hasPrebakedGlow => true;
+  bool get usesSingleNinePatchBeam => true;
   int get cachedFrameCount => visualCache.beamFrames.length;
-  int get cachedOriginCapFrameCount => visualCache.originCapFrames.length;
+  int get cachedOriginStrokeFrameCount => visualCache.originStrokeFrames.length;
   double get power => _power;
   double get pulsePhase => _pulsePhase;
   double get shinePhase => _shinePhase;
@@ -479,35 +525,35 @@ class TankLaserComponent extends PositionComponent {
         .floor()
         .clamp(0, TankLaserVisualCache.frameCount - 1);
     final chargeScale = 0.45 + _power * 0.55;
-    final renderWidth = TankLaserVisualCache.imageWidth * chargeScale;
-    _beamRenderPosition.setValues(size.x / 2 + _shakeOffset, size.y);
-    _beamRenderSize.setValues(renderWidth, size.y);
-    visualCache.beamFrames[frameIndex].render(
-      canvas,
-      position: _beamRenderPosition,
-      size: _beamRenderSize,
-      anchor: Anchor.bottomCenter,
-      overridePaint: paint,
+    final energyRenderWidth = TankLaserVisualCache.imageWidth * chargeScale;
+    final beamBottom = math.max(
+      0.0,
+      size.y - TankLaserVisualCache.originStrokeLength * chargeScale,
     );
+    final beamCenterX = size.x / 2 + _shakeOffset;
+    canvas
+      ..save()
+      ..translate(beamCenterX, size.y)
+      ..scale(chargeScale, chargeScale)
+      ..drawImageNine(
+        visualCache.originStrokeFrames[frameIndex].image,
+        TankLaserVisualCache.beamNinePatchCenter,
+        ui.Rect.fromLTRB(
+          -TankLaserVisualCache.originStrokeImageWidth / 2,
+          -size.y / chargeScale,
+          TankLaserVisualCache.originStrokeImageWidth / 2,
+          TankLaserVisualCache.originStrokeRawBottomPadding,
+        ),
+        paint,
+      )
+      ..restore();
 
-    _originCapPosition.setValues(size.x / 2 + _shakeOffset, size.y - 1);
-    _originCapSize.setValues(
-      renderWidth,
-      TankLaserVisualCache.originCapHeight * chargeScale,
+    final shineBottom = math.max(
+      0.0,
+      beamBottom - TankLaserVisualCache.shineOriginClearance * chargeScale,
     );
-    visualCache.originCapFrames[frameIndex].render(
-      canvas,
-      position: _originCapPosition,
-      size: _originCapSize,
-      anchor: Anchor.topCenter,
-      overridePaint: paint,
-    );
-
-    _shinePosition.setValues(
-      size.x / 2 + _shakeOffset,
-      size.y * (1 - _shinePhase),
-    );
-    _shineSize.setValues(renderWidth * 0.94, 40 * chargeScale);
+    _shinePosition.setValues(beamCenterX, shineBottom * (1 - _shinePhase));
+    _shineSize.setValues(energyRenderWidth * 0.94, 40 * chargeScale);
     visualCache.shineSprite.render(
       canvas,
       position: _shinePosition,

@@ -64,6 +64,10 @@ class TankComponent extends PositionComponent
   static const double cannonPivotY = 112;
   static const double cannonArcHorizontalRadius = 18;
   static const double cannonArcVerticalDrop = 10;
+  static const double laserAimStiffness = 24;
+  static const double laserAimDamping = 6.2;
+  static const double laserAimMaximumAcceleration = 12;
+  static const double laserAimMaximumSpeed = 1.75;
   static const double muzzleSmokeVerticalOffset = 2;
   static final Vector2 _shellEjectionPort = Vector2(44, 76);
 
@@ -1173,12 +1177,11 @@ class TankComponent extends PositionComponent
         math.sin(_laserTargetAngle - angle),
         math.cos(_laserTargetAngle - angle),
       );
-      final acceleration = (error * 21 - _laserAngularVelocity * 5.8).clamp(
-        -10.0,
-        10.0,
-      );
+      final acceleration =
+          (error * laserAimStiffness - _laserAngularVelocity * laserAimDamping)
+              .clamp(-laserAimMaximumAcceleration, laserAimMaximumAcceleration);
       _laserAngularVelocity = (_laserAngularVelocity + acceleration * step)
-          .clamp(-1.45, 1.45);
+          .clamp(-laserAimMaximumSpeed, laserAimMaximumSpeed);
       angle += _laserAngularVelocity * step;
       if (angle <= -math.pi / 2) {
         angle = -math.pi / 2;

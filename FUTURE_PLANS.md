@@ -83,7 +83,7 @@ The current project provides:
 - A test-only Bullet/Laser selector. The unlimited laser charges while the
   primary mouse is held, uses heavy spring-lag cannon aim without changing tank
   movement, and instantly renders 16 boot-baked white/yellow/orange glow states
-  from a matching animated half-ellipse at the muzzle beyond the screen edge
+  from a matching rounded loading-bar-style stroke at the cannon head beyond the screen edge
   with rapid shake, fast beam-anchored side
   particles, no muzzle-flash decoration, and preloaded start/idle audio. At
   35% power its core pierces all active

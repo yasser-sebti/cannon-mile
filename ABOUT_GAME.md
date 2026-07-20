@@ -36,10 +36,12 @@ cannon mount travels along a shallow upside-down U. A seventh test control now
 switches between the normal projectile weapon and an unlimited ultimate laser.
 Holding fire in Laser mode instantly snaps a white/yellow/orange beam outward
 from the exact muzzle with no fade-in and overdraws it beyond the viewport
-without an endpoint flare. A flattened, layered half-ellipse rounds the beam at
-the cannon instead of leaving a flat clipped edge. The cannon follows through a
-slightly faster but deliberately heavy angular spring while tank movement
-remains unchanged. Sixteen beam states are baked with Gaussian glow
+without an endpoint flare. A fully rounded loading-bar-style stroke with the
+same nested layers and matching outer glow begins exactly at the cannon head.
+The join stays flat and continuous while extra cache padding lets the rounded
+end glow fade naturally without clipping. The cannon uses a moderately faster
+version of its original heavy angular spring throughout Laser mode. Tank movement remains
+unchanged. Sixteen beam states are baked with Gaussian glow
 during loading; rapid cached shake, shine, and beam-anchored side particles add
 energy without runtime blur or independent particle physics. After reaching
 35% power, the
